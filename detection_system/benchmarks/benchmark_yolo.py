@@ -5,49 +5,68 @@ import torch
 
 SCREEN_WIDTH = 2560
 SCREEN_HEIGHT = 1440
-FOV_SIZE = 640
+FOV_WIDTH = 1280
+FOV_HEIGHT = 736
 
-left = (SCREEN_WIDTH // 2) - (FOV_SIZE // 2)
-top = (SCREEN_HEIGHT // 2) - (FOV_SIZE // 2)
-right = left + FOV_SIZE
-bottom = top + FOV_SIZE
+left = (SCREEN_WIDTH // 2) - (FOV_WIDTH // 2)
+top = (SCREEN_HEIGHT // 2) - (FOV_HEIGHT // 2)
+right = left + FOV_WIDTH
+bottom = top + FOV_HEIGHT
 REGION = (left, top, right, bottom)
 
-def main():
 
-    model = YOLO("./detection_system/yolo/yolov8n.pt")
-    model.to('cuda')
-    
-    camera = bettercam.create(output_color="BGRA", nvidia_gpu=True)
+def main():
+    model = YOLO("./detection_system/yolo/yolo26n.engine", task='detect')
+    camera = bettercam.create(output_color="BGRA", region=REGION)
+    cpu_pinned_tensor = torch.empty((FOV_HEIGHT, FOV_WIDTH, 4), dtype=torch.uint8, pin_memory=True)
+    gpu_tensor = torch.empty((FOV_HEIGHT, FOV_WIDTH, 4), dtype=torch.uint8, device="cuda")
+    model_tensor = torch.empty((1, 3, FOV_HEIGHT, FOV_WIDTH), dtype=torch.float16, device="cuda")
+    times = []
+    sum_times = [0,0,0,0]
 
     for _ in range(5):
-        frame = camera.grab(region=REGION)
-        while frame is None:
-            frame = camera.grab(region=REGION)
-        frame_tensor = torch.as_tensor(frame, device="cuda")
-        frame_tensor = frame_tensor[:, :, [2, 1, 0]].permute(2, 0, 1).unsqueeze(0).half().div(255.0)
-        _ = model(frame_tensor, verbose=False)
+        frame = camera.grab()
+        if frame is not None:
+            cpu_pinned_tensor.copy_(torch.from_numpy(frame))
+            gpu_tensor.copy_(cpu_pinned_tensor, non_blocking=True)
+            model_tensor[0, 0].copy_(gpu_tensor[:, :, 2])
+            model_tensor[0, 1].copy_(gpu_tensor[:, :, 1])
+            model_tensor[0, 2].copy_(gpu_tensor[:, :, 0])
+            model_tensor.div_(255.0)
+            _ = model(model_tensor, verbose=False)
+            torch.cuda.synchronize()
         
-    torch.cuda.synchronize()
-
-    times = []
-    
     for _ in range(500):
         start = time.perf_counter()
-        frame = camera.grab(region=REGION)
-        while frame is None:
-            frame = camera.grab(region=REGION)
-        frame_tensor = torch.as_tensor(frame, device="cuda")
-        frame_tensor = frame_tensor[:, :, [2, 1, 0]].permute(2, 0, 1).unsqueeze(0).half().div(255.0)
-        _ = model(frame_tensor, verbose=False)
-        torch.cuda.synchronize()
-        end = time.perf_counter()
-        times.append((end - start) * 1000)
+        frame = camera.grab()
+        grab = time.perf_counter()
+        if frame is not None:
+            cpu_pinned_tensor.copy_(torch.from_numpy(frame))
+            gpu_tensor.copy_(cpu_pinned_tensor, non_blocking=True)
+            model_tensor[0, 0].copy_(gpu_tensor[:, :, 2])
+            model_tensor[0, 1].copy_(gpu_tensor[:, :, 1])
+            model_tensor[0, 2].copy_(gpu_tensor[:, :, 0])
+            model_tensor.div_(255.0)
+            tensor_time = time.perf_counter()
+            _ = model(model_tensor, verbose=False)
+            torch.cuda.synchronize()
+            end = time.perf_counter()
+            times.append((end - start, grab - start, tensor_time - grab, end - tensor_time))
 
-    mean = sum(times) / len(times)
-    print(f"Average time: {mean} ms")
-    print(f"Fastest loop: {min(times)} ms")
-    print(f"Slowest loop: {max(times)} ms")
+    
+    for t in times:
+        sum_times[0] += t[0]
+        sum_times[1] += t[1]
+        sum_times[2] += t[2]
+        sum_times[3] += t[3]
+    length = len(times)
+
+    print(f"Average time: {sum_times[0] / length * 1000:.2f} ms")
+    print(f"Fastest loop: {min(times)[0]*1000:.2f} ms")
+    print(f"Slowest loop: {max(times)[0]*1000:.2f} ms")
+    print(f"Average grab time: {sum_times[1] / length * 1000:.2f} ms")
+    print(f"Average tensor conversion time: {sum_times[2] / length * 1000:.2f} ms")
+    print(f"Average inference time: {sum_times[3] / length * 1000:.2f} ms")
 
     camera.release()
 

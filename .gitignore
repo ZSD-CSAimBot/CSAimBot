@@ -208,6 +208,7 @@ __marimo__/
 
 # Additionall
 images
-.pt
-.onnx
-.engine
+labels
+*.pt
+*.onnx
+*.engine
