@@ -23,8 +23,9 @@ right = left + FOV_WIDTH
 bottom = top + FOV_HEIGHT
 REGION = (left, top, right, bottom)
 
+#https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
 LBUTTON = 0x01
-Q = 0x51
+Y = 0x59
 
 OUTPUT_DIR = "./detection_system/dataset/images"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -47,7 +48,7 @@ def main():
                 print(f"Screenshot: {filename}")
                 time.sleep(0.5)
 
-        if win32api.GetAsyncKeyState(Q) < 0:
+        if win32api.GetAsyncKeyState(Y) < 0:
             break
 
         time.sleep(0.005)
