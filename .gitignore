@@ -207,7 +207,6 @@ marimo/_lsp/
 __marimo__/
 
 # Additionall
-images
 labels
 *.pt
 *.onnx
