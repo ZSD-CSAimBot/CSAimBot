@@ -17,9 +17,7 @@ REGION = (left, top, right, bottom)
 
 def main():
     model = YOLO("./detection_system/yolo/yolo26n.engine", task='detect')
-    camera = bettercam.create(output_color="BGRA", region=REGION)
-    cpu_pinned_tensor = torch.empty((FOV_HEIGHT, FOV_WIDTH, 4), dtype=torch.uint8, device="cpu", pin_memory=True)
-    gpu_tensor = torch.empty((FOV_HEIGHT, FOV_WIDTH, 4), dtype=torch.uint8, device="cuda")
+    camera = bettercam.create(output_color="BGRA", region=REGION, nvidia_gpu=True)
     model_tensor = torch.empty((1, 3, FOV_HEIGHT, FOV_WIDTH), dtype=torch.float16, device="cuda")
     times = []
     sum_times = [0,0,0,0]
@@ -27,8 +25,7 @@ def main():
     for _ in range(5):
         frame = camera.grab()
         if frame is not None:
-            cpu_pinned_tensor.copy_(torch.from_numpy(frame))
-            gpu_tensor.copy_(cpu_pinned_tensor, non_blocking=True)
+            gpu_tensor = torch.from_dlpack(frame)
             model_tensor[0, 0].copy_(gpu_tensor[:, :, 2])
             model_tensor[0, 1].copy_(gpu_tensor[:, :, 1])
             model_tensor[0, 2].copy_(gpu_tensor[:, :, 0])
@@ -41,8 +38,7 @@ def main():
         frame = camera.grab()
         grab = time.perf_counter()
         if frame is not None:
-            cpu_pinned_tensor.copy_(torch.from_numpy(frame))
-            gpu_tensor.copy_(cpu_pinned_tensor, non_blocking=True)
+            gpu_tensor = torch.from_dlpack(frame)
             model_tensor[0, 0].copy_(gpu_tensor[:, :, 2])
             model_tensor[0, 1].copy_(gpu_tensor[:, :, 1])
             model_tensor[0, 2].copy_(gpu_tensor[:, :, 0])
@@ -54,7 +50,7 @@ def main():
             times.append((end - start, grab - start, tensor - grab, end - tensor))
 
     camera.release()
-
+    
     for t in times:
         sum_times[0] += t[0]
         sum_times[1] += t[1]
