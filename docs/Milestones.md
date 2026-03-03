@@ -2,7 +2,7 @@
 
 ---
 
-##Milestone 1: Wstępny model i projekt sprzętowy
+## Milestone 1: Wstępny model i projekt sprzętowy
 ### M1 - Software (Wykrywanie w YOLO):
 
 * **Cel**: Przetwarzanie obrazu i lokalizacja przeciwników na ekranie, komunikacja z mikrokontrolerem.
@@ -24,8 +24,8 @@
 * **Warunek przejścia dalej**: Projekt pozwala na pełne pokrycie wirtualnej podkładki o wymiarach min. 25x25 cm, podniesienie uchwytu z myszką w osi Z na wysokość gwarantującą brak odczytu sensora oraz zakupienie części.
 ---
 
-##Milestone 2: Konstrukcja i sterowanie ręczne
-###M2 - Software (Aplikacja i integracja wejścia):
+## Milestone 2: Konstrukcja i sterowanie ręczne
+### M2 - Software (Aplikacja i integracja wejścia):
 
 * **Cel**: Aplikacja PC czytająca klawiaturę i wysyłająca komendy do mikrokontrolera, symulacja w Gazebo, kompensacja odrzutu broni.
 
@@ -35,7 +35,7 @@
 
 * **Warunek przejścia dalej**: Skuteczność YOLO > 95%, opóźnienie wysłania pakietu poniżej 5 ms i ~0% zgubionych ramek na dystansie 10 tysięcy prób, dataset o rozmiarze min 10000 zdjęć.
 
-###M2 - Hardware (Fizyczny robot):
+### M2 - Hardware (Fizyczny robot):
 
 * **Cel**: Budowa fizycznego robota i weryfikacja poprawności sterowania silnikami z poziomu aplikacji.
 
@@ -46,8 +46,8 @@
 * **Warunek przejścia dalej**: Wydrukowane elementy 3D, reakcja silników i fizyczne poruszenie myszką w czasie < ~50 ms.
 ---
 
-##Milestone 3: Pełna integracja (Auto-Aim i kalibracja)
-###M3 - Software + Hardware:
+## Milestone 3: Pełna integracja (Auto-Aim i kalibracja)
+### M3 - Software + Hardware:
 
 * **Cel**: Integracja całego systemu: YOLO podaje koordynaty, algorytm przelicza je na kroki, a robot fizycznie namierza i strzela.
 
@@ -64,4 +64,5 @@
 * Półautomatyczna procedura kalibracji eDPI/myszki działa poprawnie i kończy się w czasie < 2 minut.
 
 * System poprawnie włącza/wyłącza kompensację odrzutu na podstawie trzymanej broni (AK47/M4A1 vs Pistolet/Snajperka).
+
 
