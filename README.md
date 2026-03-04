@@ -27,7 +27,7 @@ Celem projektu jest stworzenie fizycznego AimBota do gry CSGO. Program czytałby
 
 **Sprzęt - robot:**
 * Mikrokontrolery, diody led, sterowniki silników.
-* Silniki krokowe np. NEMA 17, śruba kulowa/trapezowa.
+* Silniki krokowe np. NEMA 23, śruba kulowa/trapezowa.
 * Zasilacz, przetwornice step-down.
 * Wydrukowane ramię robota i chwytak, serwo do obsługi chwytaka.
 
