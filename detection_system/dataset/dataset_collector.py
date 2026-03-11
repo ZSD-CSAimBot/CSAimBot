@@ -42,7 +42,7 @@ def main():
                 filepath = os.path.join(OUTPUT_DIR, filename)
 
                 #Only for 2k monitor - for 1080p frame is already 1280x736
-                frame = cv2.resize(frame, (1280, 736))
+                #frame = cv2.resize(frame, (1280, 736))
 
                 cv2.imwrite(filepath, frame)
                 print(f"Screenshot: {filename}")
