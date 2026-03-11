@@ -5,17 +5,17 @@ import bettercam
 import win32api
 
 #Version for 1080p monitor
-'''
+
 SCREEN_WIDTH = 1920
 SCREEN_HEIGHT = 1080
 FOV_WIDTH = 1280
 FOV_HEIGHT = 736
-'''
+
 #Version for 2k monitor
-SCREEN_WIDTH = 2560
-SCREEN_HEIGHT = 1440
-FOV_WIDTH = 1728
-FOV_HEIGHT = 992
+#SCREEN_WIDTH = 2560
+#SCREEN_HEIGHT = 1440
+#FOV_WIDTH = 1728
+#FOV_HEIGHT = 992
 
 left = (SCREEN_WIDTH // 2) - (FOV_WIDTH // 2)
 top = (SCREEN_HEIGHT // 2) - (FOV_HEIGHT // 2)
