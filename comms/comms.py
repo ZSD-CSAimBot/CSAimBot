@@ -1,9 +1,16 @@
 import serial
+import platform
 
 
 class CommsModule:
     # Constructor
-    def __init__(self, port="COM3", baud_rate=115200, timeout=2):
+    def __init__(self, port=None, baud_rate=115200, timeout=2):
+        # Set default port based on OS
+        if port is None:
+            if platform.system() == "Windows":
+                port = "COM3"
+            else:  # Linux
+                port = "/dev/ttyUSB0"
         self.port = port
         self.baud_rate = baud_rate
         self.timeout = timeout
