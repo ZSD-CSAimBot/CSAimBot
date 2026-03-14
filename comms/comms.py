@@ -103,7 +103,7 @@ class TCPCommsModule:
                 print("Socket timeout.")
                 return None
             except socket.error as e:
-                print(f"Recieve error: {e}")
+                print(f"Receive error: {e}")
                 return None
         else:
             print("Socket not connected.")
