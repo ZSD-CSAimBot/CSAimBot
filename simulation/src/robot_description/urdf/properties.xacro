@@ -10,7 +10,7 @@
     </material>
 
     <material name="dark_grey">
-        <color rgba="0.4 0.4 0.4 1" />
+        <color rgba="0.3 0.3 0.3 1" />
     </material>
 
     <material name="orange">
@@ -19,6 +19,10 @@
 
     <material name="yellow">
         <color rgba="1.0 1.0 0 1" />
+    </material>
+
+    <material name="green">
+        <color rgba="0 1.0 0 1" />
     </material>
 
 </robot>

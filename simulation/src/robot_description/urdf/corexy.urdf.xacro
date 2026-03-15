@@ -5,12 +5,15 @@
     
     <xacro:property name="base_width" value="0.5" />
     <xacro:property name="base_length" value="0.5" />
-    <xacro:property name="base_height" value="0.06" />
+    <xacro:property name="base_height" value="0.03" />
     <xacro:property name="rail_width" value="0.04" />
     <xacro:property name="rail_length" value="0.04" />
     <xacro:property name="main_rail_size" value="0.02" />
     <xacro:property name="motor_radius" value="0.03" />
     <xacro:property name="motor_height" value="0.06" />
+    <xacro:property name="carriage_width" value="0.08" />
+    <xacro:property name="carriage_length" value="0.06" />
+    <xacro:property name="carriage_height" value="0.04" />
 
     <link name="base_link">
         <visual>
@@ -47,17 +50,38 @@
             <geometry>
                 <box size="${base_length-2.0*motor_radius} ${rail_width} ${rail_length}" />
             </geometry>
-            <origin xyz="0 0 0" rpy="0 0 0" />
+            <origin xyz="${motor_radius} 0 ${rail_length/2.0}" rpy="0 0 0" />
             <material name="grey" />
         </visual> 
     </link>
+
+     <link name="railA_supp_link">
+        <visual>
+            <geometry>
+                <box size="${base_length} ${rail_width} ${rail_length*2.0}" />
+            </geometry>
+            <origin xyz="0 0 ${rail_length}" rpy="0 0 0" />
+            <material name="grey" />
+        </visual> 
+    </link>
+
 
     <link name="railB_link">
         <visual>
             <geometry>
                 <box size="${base_length-2.0*motor_radius} ${rail_width} ${rail_length}" />
             </geometry>
-            <origin xyz="0 0 0" rpy="0 0 0" />
+            <origin xyz="${motor_radius} 0 ${rail_length/2.0}" rpy="0 0 0" />
+            <material name="grey" />
+        </visual> 
+    </link>
+
+    <link name="railB_supp_link">
+        <visual>
+            <geometry>
+                <box size="${base_length} ${rail_width} ${rail_length*2.0}" />
+            </geometry>
+            <origin xyz="0 0 ${rail_length}" rpy="0 0 0" />
             <material name="grey" />
         </visual> 
     </link>
@@ -67,42 +91,56 @@
             <geometry>
                 <box size="${main_rail_size} ${base_length-2.0*rail_length} ${main_rail_size}" />
             </geometry>
-            <origin xyz="0 ${-(base_length-2.0*rail_length)/2.0} 0" rpy="0 0 0" />
+            <origin xyz="0 ${(base_length-2.0*rail_length)/2.0} 0" rpy="0 0 0" />
             <material name="dark_grey" />
         </visual> 
     </link>
 
-    <joint name="base_motorA_joint" type="continuous">
-        <parent link="base_link"/>
+    <joint name="supp_motorA_joint" type="continuous">
+        <parent link="railA_supp_link"/>
         <child link="motorA_link"/>
-        <origin xyz="${-base_width/2.0 + motor_radius} ${-base_width/2.0 + motor_radius} ${base_height}" rpy="0 0 0" />
+        <origin xyz="${-base_width/2.0 + motor_radius} 0 ${rail_length*2.0}" rpy="0 0 0" />
         <axis xyz="0 0 1"/>
     </joint>
 
-    <joint name="base_motorB_joint" type="continuous">
-        <parent link="base_link"/>
+    <joint name="supp_motorB_joint" type="continuous">
+        <parent link="railB_supp_link"/>
         <child link="motorB_link"/>
-        <origin xyz="${-base_width/2.0 + motor_radius} ${base_width/2.0 - motor_radius} ${base_height}" rpy="0 0 0" />
+        <origin xyz="${-base_width/2.0 + motor_radius} 0 ${rail_length*2.0}" rpy="0 0 0" />
         <axis xyz="0 0 1"/>
     </joint>
 
-     <joint name="base_railA_joint" type="fixed">
+    <joint name="base_railA_supp_joint" type="fixed">
         <parent link="base_link"/>
-        <child link="railA_link"/>
-        <origin xyz="${motor_radius} ${base_width/2.0-rail_width/2.0} ${base_height + rail_length/2.0}" rpy="0 0 0" />
+        <child link="railA_supp_link"/>
+        <origin xyz="0 -${base_width/2.0-rail_width/2.0} ${base_height}" rpy="0 0 0" />
     </joint>
 
-     <joint name="base_railB_joint" type="fixed">
+     <joint name="base_railB_supp_joint" type="fixed">
         <parent link="base_link"/>
+        <child link="railB_supp_link"/>
+        <origin xyz="0 ${base_width/2.0-rail_width/2.0} ${base_height}" rpy="0 0 0" />
+    </joint>
+
+
+     <joint name="railA_supp_joint" type="fixed">
+        <parent link="railA_supp_link"/>
+        <child link="railA_link"/>
+        <origin xyz="0 0 ${rail_length*2.0}" rpy="0 0 0" />
+    </joint>
+
+     <joint name="railB_supp_joint" type="fixed">
+        <parent link="railB_supp_link"/>
         <child link="railB_link"/>
-        <origin xyz="${motor_radius} ${-base_width/2.0+rail_width/2.0} ${base_height + rail_length/2.0}" rpy="0 0 0" />
+        <origin xyz="0 0 ${rail_length*2.0}" rpy="0 0 0" />
     </joint>
 
      <joint name="railA_main_rail_joint" type="prismatic">
         <parent link="railA_link"/>
         <child link="main_rail_link"/>
-        <origin xyz="0 ${-rail_length/2.0} 0" rpy="0 0 0" />
-        <limit lower="${-(base_length/2.0 -main_rail_size*2.0)}" upper="${base_length/2.0-main_rail_size*2.0}" effort="100" velocity="100"/>
+        <origin xyz="0 ${rail_length/2.0} ${rail_length/2.0}" rpy="0 0 0" />
+        <limit lower="${-(base_length)/2.0 + main_rail_size/2.0 + 2.0*motor_radius}" upper="${base_length/2.0 - main_rail_size/2.0}" effort="100" velocity="100"/>
+        <axis xyz="1 0 0"/>
     </joint>
 
 </robot>
