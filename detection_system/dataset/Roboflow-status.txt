@@ -1,0 +1,9 @@
+Link do roboflow - https://universe.roboflow.com/ukaszs-workspace/csgo-dataset
+***Dataset nie jest jeszcze dostępny do wglądu***
+***Backup na 1000 opisanych zdjęć znajduje się u Antoniego***
+
+Status na 21:55 dnia 14.03.2026:
+Antoni: 806/2067 annotated
+Łukasz: 393/2068 annotated
+
+  
