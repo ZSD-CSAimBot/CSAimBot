@@ -22,7 +22,7 @@
     </material>
 
     <material name="green">
-        <color rgba="0 1.0 0 1" />
+        <color rgba="0 0.6 0 1" />
     </material>
 
 </robot>
