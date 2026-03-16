@@ -4,6 +4,6 @@ Link do roboflow - https://universe.roboflow.com/ukaszs-workspace/csgo-dataset
 
 Status na 19:05 dnia 16.03.2026:
 Antoni: 1015/2067 annotated
-Łukasz: 393/2068 annotated
+Łukasz: 502/2068 annotated
 
   
