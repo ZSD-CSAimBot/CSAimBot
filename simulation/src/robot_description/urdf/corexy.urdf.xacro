@@ -179,6 +179,8 @@
         <child link="motorA_link"/>
         <origin xyz="${-base_width/2.0 + motor_radius} 0 ${rail_length*2.0}" rpy="0 0 0" />
         <axis xyz="0 0 1"/>
+        <dynamics damping="0.4" friction="0.05"/>
+        <limit effort="100" velocity="30"/>
     </joint>
 
     <joint name="motorB_joint" type="continuous">
@@ -186,6 +188,8 @@
         <child link="motorB_link"/>
         <origin xyz="${-base_width/2.0 + motor_radius} 0 ${rail_length*2.0}" rpy="0 0 0" />
         <axis xyz="0 0 1"/>
+        <dynamics damping="0.4" friction="0.05"/>
+        <limit effort="100" velocity="30"/>
     </joint>
 
     <joint name="base_railA_supp_joint" type="fixed">
@@ -220,7 +224,7 @@
         
         <limit lower="${-(base_length)/2.0 + main_rail_size/2.0 + 2.0*motor_radius}" 
                upper="${base_length/2.0 - main_rail_size / 2.0}"
-               effort="100" velocity="100"/>
+               effort="100" velocity="30"/>
         <axis xyz="1 0 0"/>
     </joint>
 
@@ -232,7 +236,7 @@
 
         <limit lower="${-(base_length - 2.0*rail_length - carriage_length) / 2.0 + (0.25 * rail_length)}" 
                upper="${(base_length - 2.0*rail_length - carriage_length) / 2.0 - (0.25 * rail_length)}"
-               effort="100" velocity="100" />
+               effort="100" velocity="30" />
         <axis xyz="0 1 0"/>
     </joint>
 
@@ -246,5 +250,51 @@
                effort="100" velocity="100" />
         <axis xyz="0 0 1"/>
     </joint>
+
+    <ros2_control name="GazeboSimSystem" type="system">
+        <hardware>
+            <plugin>gz_ros2_control/GazeboSimSystem</plugin>
+        </hardware>
+
+        <joint name="motorA_joint">
+            <command_interface name="position"/>
+            <state_interface name="position"/>
+            <state_interface name="velocity"/>
+        </joint>
+
+        <joint name="motorB_joint">
+            <command_interface name="position"/>
+            <state_interface name="position"/>
+            <state_interface name="velocity"/>
+        </joint>
+
+        <joint name="x_axis_joint">
+            <command_interface name="position"/>
+            <state_interface name="position"/>
+            <state_interface name="velocity"/>
+        </joint>
+
+        <joint name="y_axis_joint">
+            <command_interface name="position"/>
+            <state_interface name="position"/>
+            <state_interface name="velocity"/>
+        </joint>
+
+        <joint name="z_axis_joint">
+            <state_interface name="position"/>
+            <state_interface name="velocity"/>
+        </joint>
+    </ros2_control>
+
+    <gazebo>
+        <plugin filename="libgz_ros2_control-system.so" name="gz_ros2_control::GazeboSimROS2ControlPlugin">
+            <robot_param>robot_description</robot_param>
+            <robot_param_node>robot_state_publisher</robot_param_node>
+            <parameters>$(find robot_bringup)/config/motor_controllers.yaml</parameters>
+            <controller_manager_prefix_node_name>controller_manager</controller_manager_prefix_node_name>
+            <hold_joints>true</hold_joints>
+            <position_proportional_gain>1.0</position_proportional_gain>
+        </plugin>
+    </gazebo>
 
 </robot>

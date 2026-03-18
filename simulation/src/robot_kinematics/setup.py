@@ -24,6 +24,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'motor_to_corexy = robot_kinematics.motor_to_corexy:main',
         ],
     },
 )
