@@ -33,6 +33,8 @@
         <param name="use_sim_time" value="true"/>
     </node>
 
+    <node pkg="robot_kinematics" exec="distance_to_radians" />
+
     <node pkg="rviz2" exec="rviz2" output="screen" args="-d $(var rviz_config_path)">
         <param name="use_sim_time" value="true"/>
     </node>
