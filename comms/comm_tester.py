@@ -1,6 +1,6 @@
 import time
 import math
-from comms import SerialCommsModule, TCPCommsModule, TCPServer
+from comms import SerialCommsModule, TCPCommsModule, TCPServer, KeyboardInputModule
 
 
 def run_30hz_stream():
@@ -67,7 +67,6 @@ def test_tcp_stream():
             comms.disconnect()
     server.stop()
 
-
 def test_tcp_multiple_connections():
     server = TCPServer(host="127.0.0.1", port=5000)
     server.start()
@@ -94,5 +93,29 @@ def test_tcp_multiple_connections():
     server.stop()
 
 
+def test_keyboard_only():
+    # Initialize the keyboard module with default settings
+    keyboard_input = KeyboardInputModule()
+
+    print("\n--- KEYBOARD MODULE TEST ---")
+    print(f"Tracked keys: {keyboard_input.tracked_keys} | E-STOP: '{keyboard_input.estop_key}'\n")
+
+    while True:
+        start_time = time.time()
+
+        # Read the current state of tracked keys
+        current_keys = keyboard_input.get_key()
+        print(f"Current input: '{current_keys}'")
+
+        # Exit the loop immediately if the emergency stop key is pressed
+        if current_keys == keyboard_input.estop_key:
+            print("\n!!! E-STOP TRIGGERED !!!")
+            break
+
+        # Maintain loop frequency at approximately 30Hz
+        exe_time = time.time() - start_time
+        time.sleep(max(0.0, (1.0 / 30.0) - exe_time))
+
 if __name__ == "__main__":
-    test_tcp_stream()
+    #test_tcp_stream()
+    test_keyboard_only()
