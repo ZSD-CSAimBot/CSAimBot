@@ -33,8 +33,11 @@ class SerialCommsModule:
     # Encodes command and sends it to esp
     def send_command(self, command):
         if self.esp and self.esp.is_open:
+            # Flush input buffer to remove old data
+            self.esp.reset_input_buffer()
             text_to_send = f"{command}\r".encode('utf-8')
             self.esp.write(text_to_send)
+            self.esp.flush()  # Wait until all data is sent
             print(f"Sent: {command}")
         else:
             print("Port closed. Unable to send command.")
@@ -201,6 +204,7 @@ class TCPServer:
                 print("TCP Server stopped.")
             except socket.error as e:
                 print(f"Error stopping server: {e}")
+
 
 class KeyboardInputModule:
     def __init__(self, tracked_keys=None, estop_key="p"):
