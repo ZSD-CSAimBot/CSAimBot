@@ -2,6 +2,7 @@ import serial
 import socket
 import platform
 import threading
+import keyboard
 
 
 class SerialCommsModule:
@@ -32,8 +33,11 @@ class SerialCommsModule:
     # Encodes command and sends it to esp
     def send_command(self, command):
         if self.esp and self.esp.is_open:
+            # Flush input buffer to remove old data
+            self.esp.reset_input_buffer()
             text_to_send = f"{command}\r".encode('utf-8')
             self.esp.write(text_to_send)
+            self.esp.flush()  # Wait until all data is sent
             print(f"Sent: {command}")
         else:
             print("Port closed. Unable to send command.")
@@ -201,6 +205,28 @@ class TCPServer:
             except socket.error as e:
                 print(f"Error stopping server: {e}")
 
+
+class KeyboardInputModule:
+    def __init__(self, tracked_keys=None, estop_key="p"):
+        # Default keys: i, j, k, l
+        self.tracked_keys = tracked_keys or ['i', 'j', 'k', 'l']
+        self.estop_key = estop_key
+
+    def get_key(self):
+        try:
+            # E-stop takes absolute priority
+            if keyboard.is_pressed(self.estop_key):
+                return self.estop_key
+
+            pressed_keys = ""
+            for key in self.tracked_keys:
+                if keyboard.is_pressed(key):
+                    pressed_keys += key
+
+            return pressed_keys
+        except Exception as e:
+            print(f"Keyboard error: {e}")
+            return ""
 
 if __name__ == "__main__":
     print("Don't run me!")
