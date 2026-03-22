@@ -1,0 +1,11 @@
+# To install the required packages, run the following command in main directory of the project:
+# pip install -r detection_system/requirements.txt
+
+--extra-index-url https://download.pytorch.org/whl/cu128
+
+bettercam==1.0.0
+opencv-python==4.13.0.92
+ultralytics==8.4.22
+torch==2.10.0+cu128
+torchvision==0.25.0+cu128
+tensorrt_cu12==10.15.1.29
