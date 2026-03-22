@@ -2,16 +2,8 @@
 <robot name="my_robot" xmlns:xacro="http://www.ros.org/wiki/xacro">
 
     <xacro:include filename="$(find robot_description)/urdf/properties.xacro"/>
+    <xacro:include filename="$(find robot_description)/urdf/macro.xacro"/>
     
-    <xacro:property name="base_width" value="0.5" />
-    <xacro:property name="base_length" value="0.5" />
-    <xacro:property name="base_height" value="0.06" />
-    <xacro:property name="rail_width" value="0.04" />
-    <xacro:property name="rail_length" value="0.04" />
-    <xacro:property name="main_rail_size" value="0.02" />
-    <xacro:property name="motor_radius" value="0.03" />
-    <xacro:property name="motor_height" value="0.06" />
-
     <link name="base_link">
         <visual>
             <geometry>
@@ -20,6 +12,13 @@
             <origin xyz="0 0 ${base_height/2.0}" rpy="0 0 0" />
             <material name="grey" />
         </visual> 
+        <collision>
+            <geometry>
+                <box size="${base_width} ${base_length} ${base_height}" />
+            </geometry>
+            <origin xyz="0 0 ${base_height/2.0}" rpy="0 0 0" />
+        </collision>
+        <xacro:box_inertia m="5.0" w="${base_width}" l="${base_length}" h="${base_height}" xyz="0 0 ${base_height/2.0}" rpy="0 0 0"/>
     </link>
 
     <link name="motorA_link">
@@ -30,6 +29,13 @@
             <origin xyz="0 0 ${motor_height/2.0}" rpy="0 0 0" />
             <material name="blue" />
         </visual>
+        <collision>
+            <geometry>
+                <cylinder radius="${motor_radius}" length="${motor_height}"/> 
+            </geometry>
+            <origin xyz="0 0 ${motor_height/2.0}" rpy="0 0 0" />
+        </collision>
+        <xacro:cylinder_inertia m="0.5" r="${motor_radius}" h="${motor_height}" xyz="0 0 ${motor_height/2.0}" rpy="0 0 0"/>
     </link>
 
     <link name="motorB_link">
@@ -40,6 +46,13 @@
             <origin xyz="0 0 ${motor_height/2.0}" rpy="0 0 0" />
             <material name="yellow" />
         </visual>
+        <collision>
+            <geometry>
+                <cylinder radius="${motor_radius}" length="${motor_height}"/>  
+            </geometry>
+            <origin xyz="0 0 ${motor_height/2.0}" rpy="0 0 0" />
+        </collision>
+        <xacro:cylinder_inertia m="0.5" r="${motor_radius}" h="${motor_height}" xyz="0 0 ${motor_height/2.0}" rpy="0 0 0"/>
     </link>
 
     <link name="railA_link">
@@ -47,9 +60,33 @@
             <geometry>
                 <box size="${base_length-2.0*motor_radius} ${rail_width} ${rail_length}" />
             </geometry>
-            <origin xyz="0 0 0" rpy="0 0 0" />
+            <origin xyz="${motor_radius} 0 ${rail_length/2.0}" rpy="0 0 0" />
             <material name="grey" />
         </visual> 
+        <collision>
+            <geometry>
+                <box size="${base_length-2.0*motor_radius} ${rail_width} ${rail_length}" />
+            </geometry>
+            <origin xyz="${motor_radius} 0 ${rail_length/2.0}" rpy="0 0 0" />
+        </collision>
+        <xacro:box_inertia m="0.5" w="${base_length-2.0*motor_radius}" l="${rail_width}" h="${rail_length}" xyz="${motor_radius} 0 ${rail_length/2.0}" rpy="0 0 0"/>
+    </link>
+
+     <link name="railA_supp_link">
+        <visual>
+            <geometry>
+                <box size="${base_length} ${rail_width} ${rail_length*2.0}" />
+            </geometry>
+            <origin xyz="0 0 ${rail_length}" rpy="0 0 0" />
+            <material name="grey" />
+        </visual> 
+        <collision>
+            <geometry>
+                <box size="${base_length} ${rail_width} ${rail_length*2.0}" />
+            </geometry>
+            <origin xyz="0 0 ${rail_length}" rpy="0 0 0" />
+        </collision>
+        <xacro:box_inertia m="1.0" w="${base_length}" l="${rail_width}" h="${rail_length*2.0}" xyz="0 0 ${rail_length}" rpy="0 0 0"/>
     </link>
 
     <link name="railB_link">
@@ -57,9 +94,33 @@
             <geometry>
                 <box size="${base_length-2.0*motor_radius} ${rail_width} ${rail_length}" />
             </geometry>
-            <origin xyz="0 0 0" rpy="0 0 0" />
+            <origin xyz="${motor_radius} 0 ${rail_length/2.0}" rpy="0 0 0" />
             <material name="grey" />
         </visual> 
+        <collision>
+            <geometry>
+                <box size="${base_length-2.0*motor_radius} ${rail_width} ${rail_length}" />
+            </geometry>
+            <origin xyz="${motor_radius} 0 ${rail_length/2.0}" rpy="0 0 0" />
+        </collision>
+        <xacro:box_inertia m="0.5" w="${base_length-2.0*motor_radius}" l="${rail_width}" h="${rail_length}" xyz="${motor_radius} 0 ${rail_length/2.0}" rpy="0 0 0"/>
+    </link>
+
+    <link name="railB_supp_link">
+        <visual>
+            <geometry>
+                <box size="${base_length} ${rail_width} ${rail_length*2.0}" />
+            </geometry>
+            <origin xyz="0 0 ${rail_length}" rpy="0 0 0" />
+            <material name="grey" />
+        </visual> 
+        <collision>
+            <geometry>
+                <box size="${base_length} ${rail_width} ${rail_length*2.0}" />
+            </geometry>
+            <origin xyz="0 0 ${rail_length}" rpy="0 0 0" />
+        </collision>
+        <xacro:box_inertia m="1.0" w="${base_length}" l="${rail_width}" h="${rail_length*2.0}" xyz="0 0 ${rail_length}" rpy="0 0 0"/>
     </link>
 
     <link name="main_rail_link">
@@ -67,42 +128,173 @@
             <geometry>
                 <box size="${main_rail_size} ${base_length-2.0*rail_length} ${main_rail_size}" />
             </geometry>
-            <origin xyz="0 ${-(base_length-2.0*rail_length)/2.0} 0" rpy="0 0 0" />
+            <origin xyz="0 ${(base_length-2.0*rail_length)/2.0} 0" rpy="0 0 0" />
             <material name="dark_grey" />
         </visual> 
+        <collision>
+            <geometry>
+                <box size="${main_rail_size} ${base_length-2.0*rail_length} ${main_rail_size}" />
+            </geometry>
+            <origin xyz="0 ${(base_length-2.0*rail_length)/2.0} 0" rpy="0 0 0" />
+        </collision>
+        <xacro:box_inertia m="0.5" w="${main_rail_size}" l="${base_length-2.0*rail_length}" h="${main_rail_size}" xyz="0 ${(base_length-2.0*rail_length)/2.0} 0" rpy="0 0 0"/>
     </link>
 
-    <joint name="base_motorA_joint" type="continuous">
-        <parent link="base_link"/>
+    <link name="carriage_link">
+        <visual>
+            <geometry>
+                <box size="${carriage_length} ${carriage_width} ${carriage_height}" />
+            </geometry>
+            <origin xyz="0 0 ${carriage_height/2.0}" rpy="0 0 0" />
+            <material name="orange" />
+        </visual> 
+        <collision>
+            <geometry>
+                <box size="${carriage_length} ${carriage_width} ${carriage_height}" />
+            </geometry>
+            <origin xyz="0 0 ${carriage_height/2.0}" rpy="0 0 0" />
+        </collision>
+        <xacro:box_inertia m="0.2" w="${carriage_length}" l="${carriage_width}" h="${carriage_height}" xyz="0 0 ${carriage_height/2.0}" rpy="0 0 0"/>
+    </link>
+
+    <link name="gripper_link">
+        <visual>
+            <geometry>
+                <box size="${gripper_width} ${gripper_length} ${gripper_height}" />
+            </geometry>
+            <origin  xyz="${gripper_length / 2.0} 0 0" rpy="0 0 0"/>
+            <material name="green" />
+        </visual>
+        <collision>
+            <geometry>
+                <box size="${gripper_width} ${gripper_length} ${gripper_height}" />
+            </geometry>
+            <origin  xyz="${gripper_length / 2.0} 0 0" rpy="0 0 0"/>
+        </collision>
+        <xacro:box_inertia m="0.05" w="${gripper_width}" l="${gripper_length}" h="${gripper_height}" xyz="${gripper_length / 2.0} 0 0" rpy="0 0 0"/>
+    </link>
+
+    <joint name="motorA_joint" type="continuous">
+        <parent link="railA_supp_link"/>
         <child link="motorA_link"/>
-        <origin xyz="${-base_width/2.0 + motor_radius} ${-base_width/2.0 + motor_radius} ${base_height}" rpy="0 0 0" />
+        <origin xyz="${-base_width/2.0 + motor_radius} 0 ${rail_length*2.0}" rpy="0 0 0" />
         <axis xyz="0 0 1"/>
+        <dynamics damping="0.4" friction="0.05"/>
+        <limit effort="100" velocity="30"/>
     </joint>
 
-    <joint name="base_motorB_joint" type="continuous">
-        <parent link="base_link"/>
+    <joint name="motorB_joint" type="continuous">
+        <parent link="railB_supp_link"/>
         <child link="motorB_link"/>
-        <origin xyz="${-base_width/2.0 + motor_radius} ${base_width/2.0 - motor_radius} ${base_height}" rpy="0 0 0" />
+        <origin xyz="${-base_width/2.0 + motor_radius} 0 ${rail_length*2.0}" rpy="0 0 0" />
         <axis xyz="0 0 1"/>
+        <dynamics damping="0.4" friction="0.05"/>
+        <limit effort="100" velocity="30"/>
     </joint>
 
-     <joint name="base_railA_joint" type="fixed">
+    <joint name="base_railA_supp_joint" type="fixed">
         <parent link="base_link"/>
+        <child link="railA_supp_link"/>
+        <origin xyz="0 -${base_width/2.0-rail_width/2.0} ${base_height}" rpy="0 0 0" />
+    </joint>
+
+     <joint name="base_railB_supp_joint" type="fixed">
+        <parent link="base_link"/>
+        <child link="railB_supp_link"/>
+        <origin xyz="0 ${base_width/2.0-rail_width/2.0} ${base_height}" rpy="0 0 0" />
+    </joint>
+
+     <joint name="railA_supp_joint" type="fixed">
+        <parent link="railA_supp_link"/>
         <child link="railA_link"/>
-        <origin xyz="${motor_radius} ${base_width/2.0-rail_width/2.0} ${base_height + rail_length/2.0}" rpy="0 0 0" />
+        <origin xyz="0 0 ${rail_length*2.0}" rpy="0 0 0" />
     </joint>
 
-     <joint name="base_railB_joint" type="fixed">
-        <parent link="base_link"/>
+     <joint name="railB_supp_joint" type="fixed">
+        <parent link="railB_supp_link"/>
         <child link="railB_link"/>
-        <origin xyz="${motor_radius} ${-base_width/2.0+rail_width/2.0} ${base_height + rail_length/2.0}" rpy="0 0 0" />
+        <origin xyz="0 0 ${rail_length*2.0}" rpy="0 0 0" />
     </joint>
 
-     <joint name="railA_main_rail_joint" type="prismatic">
+     <joint name="x_axis_joint" type="prismatic">
         <parent link="railA_link"/>
         <child link="main_rail_link"/>
-        <origin xyz="0 ${-rail_length/2.0} 0" rpy="0 0 0" />
-        <limit lower="${-(base_length/2.0 -main_rail_size*2.0)}" upper="${base_length/2.0-main_rail_size*2.0}" effort="100" velocity="100"/>
+
+        <origin xyz="0 ${rail_length/2.0} ${rail_length/2.0}" rpy="0 0 0" />
+        
+        <limit lower="${-(base_length)/2.0 + main_rail_size/2.0 + 2.0*motor_radius}" 
+               upper="${base_length/2.0 - main_rail_size / 2.0}"
+               effort="100" velocity="30"/>
+        <axis xyz="1 0 0"/>
     </joint>
+
+    <joint name="y_axis_joint" type="prismatic">
+        <parent link="main_rail_link"/>
+        <child link="carriage_link"/>
+
+        <origin xyz="0 ${(base_length - 2.0*rail_length) / 2.0} ${main_rail_size / 2.0}" rpy="0 0 0" />
+
+        <limit lower="${-(base_length - 2.0*rail_length - carriage_length) / 2.0 + (0.25 * rail_length)}" 
+               upper="${(base_length - 2.0*rail_length - carriage_length) / 2.0 - (0.25 * rail_length)}"
+               effort="100" velocity="30" />
+        <axis xyz="0 1 0"/>
+    </joint>
+
+    <joint name="z_axis_joint" type="prismatic">
+        <parent link="carriage_link"/>
+        <child link="gripper_link"/>
+        <origin xyz="${carriage_length / 2.0} 0 0" rpy="0 0 0" />
+
+        <limit lower="${-(base_height)}" 
+               upper="0"
+               effort="100" velocity="100" />
+        <axis xyz="0 0 1"/>
+    </joint>
+
+    <ros2_control name="GazeboSimSystem" type="system">
+        <hardware>
+            <plugin>gz_ros2_control/GazeboSimSystem</plugin>
+        </hardware>
+
+        <joint name="motorA_joint">
+            <command_interface name="position"/>
+            <state_interface name="position"/>
+            <state_interface name="velocity"/>
+        </joint>
+
+        <joint name="motorB_joint">
+            <command_interface name="position"/>
+            <state_interface name="position"/>
+            <state_interface name="velocity"/>
+        </joint>
+
+        <joint name="x_axis_joint">
+            <command_interface name="position"/>
+            <state_interface name="position"/>
+            <state_interface name="velocity"/>
+        </joint>
+
+        <joint name="y_axis_joint">
+            <command_interface name="position"/>
+            <state_interface name="position"/>
+            <state_interface name="velocity"/>
+        </joint>
+
+        <joint name="z_axis_joint">
+            <state_interface name="position"/>
+            <state_interface name="velocity"/>
+        </joint>
+    </ros2_control>
+
+    <gazebo>
+        <plugin filename="libgz_ros2_control-system.so" name="gz_ros2_control::GazeboSimROS2ControlPlugin">
+            <robot_param>robot_description</robot_param>
+            <robot_param_node>robot_state_publisher</robot_param_node>
+            <parameters>$(find robot_bringup)/config/motor_controllers.yaml</parameters>
+            <controller_manager_prefix_node_name>controller_manager</controller_manager_prefix_node_name>
+            <hold_joints>true</hold_joints>
+            <position_proportional_gain>1.0</position_proportional_gain>
+        </plugin>
+    </gazebo>
 
 </robot>
