@@ -1,7 +1,9 @@
 from ultralytics import YOLO
 
+
+# This script exports a YOLO model to TensorRT format for optimized inference.
 def main():
-    model = YOLO("./detection_system/yolo/yolo26n.pt")
+    model = YOLO("./detection_system/yolo/training/Beta_v2/weights/best.pt")
     model.export(
         format="engine",
         imgsz=[736, 1280], 

@@ -1,0 +1,13 @@
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 8
+names: ['ct', 'cthead', 'pistol', 'rifle', 'shotgun', 'sniper', 'tt', 'tthead']
+
+roboflow:
+  workspace: ukaszs-workspace
+  project: csgo-dataset
+  version: 2
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/ukaszs-workspace/csgo-dataset/dataset/2

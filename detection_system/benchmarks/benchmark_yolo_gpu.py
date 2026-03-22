@@ -1,8 +1,16 @@
+import os
 import bettercam
 import time
 from ultralytics import YOLO
 import torch
 
+#=========================================================================================
+# REMEMBER TO RUN export_yolo_trt.py BEFORE THIS SCRIPT TO GENERATE THE best.engine FILE
+# NVIDIA GPU with TensorRT support is required to run this benchmark
+#=========================================================================================
+
+
+# Define the region of interest (ROI) for capturing the screen
 SCREEN_WIDTH = 2560
 SCREEN_HEIGHT = 1440
 FOV_WIDTH = 1280
@@ -14,9 +22,13 @@ right = left + FOV_WIDTH
 bottom = top + FOV_HEIGHT
 REGION = (left, top, right, bottom)
 
+# Path to the TensorRT engine file generated from the YOLO model
+MODEL_PATH = os.path.abspath('./detection_system/yolo/training/Beta_v2/weights/best.engine')
 
+
+# Main function to benchmark YOLO FULL GPU LOOP
 def main():
-    model = YOLO("./detection_system/yolo/yolo26n.engine", task='detect')
+    model = YOLO(MODEL_PATH, task='detect')
     camera = bettercam.create(output_color="BGRA", region=REGION, nvidia_gpu=True)
     model_tensor = torch.empty((1, 3, FOV_HEIGHT, FOV_WIDTH), dtype=torch.float16, device="cuda")
     times = []

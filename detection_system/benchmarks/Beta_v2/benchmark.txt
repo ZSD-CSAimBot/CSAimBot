@@ -1,0 +1,29 @@
+===== BETA 2.0 MODEL BENCHMARK (YOLO26n) =====
+
+    GPU: NVIDIA RTX 5070Ti (PCIe 5.0)
+    CPU: INTEL i7-13700KF (24 Cores)
+    RAM: 32GB DDR5 6000Mhz
+
+==============================================
+    FULL GPU LOOP
+----------------------------------------------
+
+    Average time: 3.63 ms
+    Fastest loop: 2.90 ms
+    Slowest loop: 4.93 ms
+    Average grab time: 0.75 ms
+    Average tensor conversion time: 0.13 ms
+    Average inference time: 2.74 ms
+
+==============================================
+    CPU PINNED MEMORY LOOP
+----------------------------------------------
+
+    Average time: 3.26 ms
+    Fastest loop: 2.77 ms
+    Slowest loop: 5.41 ms
+    Average grab time: 0.19 ms
+    Average tensor conversion time: 0.39 ms
+    Average inference time: 2.69 ms
+    
+==============================================
