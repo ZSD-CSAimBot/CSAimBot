@@ -1,6 +1,7 @@
 <launch>
+    <set_env name="GZ_SIM_RESOURCE_PATH" value="$(env GZ_SIM_RESOURCE_PATH ''):$(find-pkg-prefix robot_description)/share" />
     <let name="urdf_path" 
-         value="$(find-pkg-share robot_description)/urdf/corexy.urdf.xacro"/>
+         value="$(find-pkg-share robot_description)/urdf/real_corexy.xacro"/>
     <let name="rviz_config_path" 
          value="$(find-pkg-share robot_description)/rviz/urdf_config.rviz"/>
 

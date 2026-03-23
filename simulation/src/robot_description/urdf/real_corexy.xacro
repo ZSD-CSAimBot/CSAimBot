@@ -1,0 +1,671 @@
+<?xml version="1.0"?>
+<robot name="my_robot" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+    <xacro:property name="base_width" value="0.5178" />
+    <xacro:property name="base_length" value="0.4838" />
+    <xacro:property name="base_height" value="0.04" />
+
+
+    <material name="grey">
+        <color rgba="0.5 0.5 0.5 1" />
+    </material>
+
+    <material name="dark_grey">
+        <color rgba="0.3 0.3 0.3 1" />
+    </material>
+
+     <material name="light_grey">
+        <color rgba="0.7 0.7 0.7 1" />
+    </material>
+
+    <material name="green">
+        <color rgba="0 0.6 0 1" />
+    </material>
+    
+    <link name="base_link">
+        <inertial>
+            <origin xyz="0 0 ${base_height/2.0}" rpy="0 0 0"/>
+            <mass value="10"/>
+            <inertia ixx="${(10/12.0) * (base_height*base_height + base_length*base_length)}" ixy="0.0" ixz="0.0" 
+                     iyy="${(10/12.0) * (base_width*base_width + base_height*base_height)}" iyz="0.0" 
+                     izz="${(10/12.0) * (base_width*base_width + base_length*base_length)}"/>
+        </inertial>
+        <visual>
+            <geometry>
+                <box size="${base_width} ${base_length} ${base_height}" />
+            </geometry>
+            <origin xyz="0 0 ${base_height/2.0}" rpy="0 0 0" />
+            <material name="grey" />
+        </visual> 
+        <collision>
+            <origin xyz="0 0 ${base_height/2.0}" rpy="0 0 0" />
+            <geometry>
+                <box size="${base_width} ${base_length} ${base_height}" />
+            </geometry>
+        </collision>
+    </link>
+
+    <link name="podstawa_prawa">
+        <inertial>
+            <origin xyz="0 0.042 0.167" rpy="0 0 ${-pi/2.0}" />
+            <mass value="0.11223308489437728" />
+            <inertia ixx="0.00041028645624052035" iyy="6.286050337893367e-05" izz="0.0004102865492015828" ixy="-5.945579440957277e-06" iyz="5.944881698247313e-06" ixz="-7.289346889472609e-06" />
+        </inertial>
+        <visual>
+            <origin xyz="0 0.042 0.167" rpy="${-pi/2.0} 0 ${-pi/2.0}" />
+            <geometry>
+                <mesh filename="package://robot_description/meshes/podstawa.stl" scale="0.001 0.001 0.001" />
+            </geometry>${-pi/2.0}
+            <material name="green" />
+        </visual>
+        <collision>
+            <origin xyz="0 0.042 0.167" rpy=" ${-pi/2.0} 0 ${-pi/2.0}" />
+            <geometry>
+                <mesh filename="package://robot_description/meshes/podstawa.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+        </collision>
+    </link>
+
+    <link name="podstawa_lewa">
+        <inertial>
+            <origin xyz="-0.042 0 0.167" rpy="${-pi/2.0} 0 0" />
+            <mass value="0.11223308489437728" />
+            <inertia ixx="0.0004102865492015863" iyy="6.286050337892671e-05" izz="0.000410286456240522" ixy="-5.9448816982483966e-06" iyz="-5.945579440957275e-06" ixz="7.289346889465669e-06" />
+        </inertial>
+        <visual>
+            <origin xyz="-0.042 0 0.167" rpy="${-pi/2.0} 0 0" />
+            <geometry>
+                <mesh filename="package://robot_description/meshes/podstawa.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+            <material name="green" />
+        </visual>
+        <collision>
+            <origin xyz="-0.042 0 0.167" rpy=" ${-pi/2.0} 0 0" />
+            <geometry>
+                <mesh filename="package://robot_description/meshes/podstawa.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+        </collision>
+    </link>
+
+
+    <link name="podstawa_silnik_prawa">
+        <inertial>
+            <origin xyz="0 0 0.169" rpy="${-pi/2.0} 0 ${pi}" />
+            <mass value="0.20218223370563881" />
+            <inertia ixx="0.000706070967420282" iyy="0.00024961511142074233" izz="0.0006694612191394805" ixy="1.1259960278757128e-05" iyz="4.083320248896363e-05" ixz="-4.5176606412776835e-06" />
+        </inertial>
+        <visual name="Montaz_Robota-v18_Podstawa_Silnika_Prawa-v16_visual">
+            <origin xyz="0 0 0.169" rpy="${-pi/2.0} 0 ${pi}" />
+            <geometry>
+                <mesh filename="package://robot_description/meshes/podstawa_silnik_prawy.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+            <material name="green" />
+        </visual>
+        <collision name="Montaz_Robota-v18_Podstawa_Silnika_Prawa-v16_collision">
+            <origin xyz="0 0 0.169" rpy="${-pi/2.0} 0 ${pi}" />
+            <geometry>
+                <mesh filename="package://robot_description/meshes/podstawa_silnik_prawy.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+        </collision>
+    </link>
+
+    <link name="podstawa_silnik_lewa">
+        <inertial>
+            <origin xyz="0 0 0.169" rpy="${pi/2.0} 0 ${pi}" />
+            <mass value="0.20218223370563895" />
+            <inertia ixx="0.0007060709674202609" iyy="0.00024961511142074753" izz="0.0006694612191394736" ixy="-1.1259960278757128e-05" iyz="4.08332024889632e-05" ixz="4.517660641277033e-06" />
+        </inertial>
+        <visual>
+            <origin xyz="0 0 0.169" rpy="${-pi/2.0} 0 ${pi}" />
+            <geometry>
+                <mesh filename="package://robot_description/meshes/podstawa_silnik_lewy.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+            <material name="green" />
+        </visual>
+        <collision>
+            <origin xyz="0 0 0.169" rpy="${pi/2.0} 0 ${pi}" />
+            <geometry>
+                <mesh filename="package://robot_description/meshes/podstawa_silnik_lewy.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+        </collision>
+    </link>
+
+
+    <link name="nema23_prawa">
+        <inertial>
+            <origin xyz="0 0 0" rpy="${pi/2.0} 0 0" />
+            <mass value="1.8783499708303255" />
+            <inertia ixx="0.0015488017039171163" iyy="0.0015488137344486091" izz="0.0008584777243000885" ixy="8.569533971325427e-16" iyz="2.497535653549904e-09" ixz="-1.0599160438218291e-15" />
+        </inertial>
+        <visual>
+            <origin xyz="0 0 0" rpy="${pi/2.0} 0 0" />
+            <geometry>
+                <mesh filename="package://robot_description/meshes/nema23.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+            <material name="dark_grey" />
+        </visual>
+        <collision>
+            <origin xyz="0 0 0" rpy="${pi/2.0} 0 0" />
+            <geometry>
+                <mesh filename="package://robot_description/meshes/Montaz_Robota-v18_Nema_23_Dual_Shaft-v2.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+        </collision>
+    </link>
+
+    <link name="nema23_lewa">
+        <inertial>
+            <origin xyz="0 0 0" rpy="${pi/2.0} 0.0 0.0" />
+            <mass value="1.8783499708303255" />
+            <inertia ixx="0.001548801703917144" iyy="0.000858477724299922" izz="0.0015488137344487063" ixy="-1.0546273293916021e-15" iyz="-2.4975356539835847e-09" ixz="-8.465450737795861e-16" />
+        </inertial>
+        <visual>
+            <origin xyz="0.0 0.0 0.0" rpy="${pi/2.0} 0.0 0.0" />
+            <geometry>
+                <mesh filename="package://robot_description/meshes/nema23.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+            <material name="dark_grey" />
+        </visual>
+        <collision>
+            <origin xyz="0.0 0.0 0.0" rpy="${pi/2.0} 0.0 0.0" />
+            <geometry>
+                <mesh filename="package://robot_description/meshes/Montaz_Robota-v18_Nema_23_Dual_Shaft-v2.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+        </collision>
+    </link>
+
+    <link name="profil_przod">
+        <inertial>
+            <origin xyz="-0.042 0.01 -0.012" rpy="0.0 0.0 0.0" />
+            <mass value="0.19670492898970188" />
+            <inertia ixx="0.0026307540890066136" iyy="1.6043404950184803e-05" izz="0.002630754089002287" ixy="0.0" iyz="-1.5347723092419462e-20" ixz="-8.709832854924332e-19" />
+        </inertial>
+        <visual>
+            <origin xyz="-0.042 0.01 -0.012" rpy="0.0 0.0 0.0" />
+            <geometry>
+                <mesh filename="package://robot_description/meshes/profil.stl" scale="0.001 0.001 0.001" />
+            </geometry>  
+            <material name="grey" />
+        </visual>
+        <collision>
+            <origin xyz="-0.042 0.01 -0.012" rpy="0.0 0.0 0.0" />
+            <geometry>
+                <mesh filename="package://robot_description/meshes/profil.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+        </collision>
+    </link>
+
+    <link name="profil_tyl">
+        <inertial>
+            <origin xyz="0 -0.011 -0.012" rpy="0.0 -0.0 ${pi}" />
+            <mass value="0.19670492898970188" />
+            <inertia ixx="0.0026307540890023184" iyy="1.6043404950177864e-05" izz="0.0026307540890065963" ixy="-8.028817035840072e-18" iyz="-6.938893903907228e-18" ixz="-5.003427931063348e-18" />
+        </inertial>
+        <visual>
+            <origin xyz="0 -0.011 -0.012" rpy="0 0 ${pi}" />
+            <geometry>
+                <mesh filename="package://robot_description/meshes/profil.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+            <material name="grey" />
+        </visual>
+        <collision>
+            <origin xyz="0 -0.011 -0.012" rpy="0 0 ${pi}" />
+            <geometry>
+                <mesh filename="package://robot_description/meshes/profil.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+        </collision>
+    </link>
+
+    <link name="profil_prawy">
+        <inertial>
+            <origin xyz="-0.053 0 -0.012" rpy="0 0 ${pi/2.0}" />
+            <mass value="0.19670492898970188" />
+            <inertia ixx="0.0026307540890023566" iyy="0.0026307540890066587" izz="1.6043404950184214e-05" ixy="-2.181325520453074e-18" iyz="-1.1384122811097797e-17" ixz="-6.178908030051483e-18" />
+        </inertial>
+        <visual>
+            <origin xyz="-0.053 0 -0.012" rpy="0 0 ${pi/2.0}" />
+            <geometry>
+                <mesh filename="package://robot_description/meshes/profil.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+            <material name="grey" />
+        </visual>
+        <collision>
+            <origin xyz="-0.053 0 -0.012" rpy="-0 0 ${pi/2.0}" />
+            <geometry>
+                <mesh filename="package://robot_description/meshes/profil.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+        </collision>
+    </link>
+
+    <link name="profil_lewy">
+        <inertial>
+            <origin xyz="0.01 0 -0.012" rpy="0.0 -0.0 ${-pi/2.0}" />
+            <mass value="0.19670492898970188" />
+            <inertia ixx="0.0026307540890023184" iyy="0.0026307540890066726" izz="1.6043404950170925e-05" ixy="-1.6822368317041472e-18" iyz="3.469446951953614e-18" ixz="-2.930458376867843e-17" />
+        </inertial>
+        <visual>
+            <origin xyz="0.01 0 -0.012" rpy="0 0 ${-pi/2.0}" />
+            <geometry>
+                <mesh filename="package://robot_description/meshes/profil.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+            <material name="grey" />
+        </visual>
+        <collision>
+            <origin xyz="0.01 0 -0.012" rpy="0 0 ${-pi/2.0}" />
+            <geometry>
+                <mesh filename="package://robot_description/meshes/profil.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+        </collision>
+    </link>
+
+    <link name="szyna_prawa">
+        <inertial>
+            <origin xyz="-0.053 0 -0.022" rpy="0 ${pi} ${-pi/2.0}" />
+            <mass value="0.09347154569423409" />
+            <inertia ixx="0.0012477745278656818" iyy="1.638656107267461e-06" izz="0.001247145916207322" ixy="-1.463672932855431e-18" iyz="-5.204170427930421e-18" ixz="2.1684043449710081e-19" />
+        </inertial>
+        <visual>
+            <origin xyz="-0.053 0 -0.022" rpy="0 ${pi} ${-pi/2.0}" />
+            <geometry>
+                <mesh filename="package://robot_description/meshes/szyna.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+            <material name="light_grey" />
+        </visual>
+        <collision>
+            <origin xyz="-0.053 0 -0.022" rpy="0 ${pi} ${-pi/2.0}" />
+            <geometry>
+                <mesh filename="package://robot_description/meshes/szyna.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+        </collision>
+    </link>
+    <link name="szyna_lewa">
+        <inertial>
+            <origin xyz="0.01 0 -0.022" rpy="0 ${pi}  ${pi/2.0}" />
+            <mass value="0.09347154569423409" />
+            <inertia ixx="0.001247774527865671" iyy="1.6386561072704964e-06" izz="0.0012471459162073412" ixy="-1.626303258728256e-19" iyz="-1.0087876248748555e-49" ixz="-2.873135757086586e-18" />
+        </inertial>
+        <visual>
+            <origin xyz="0.01 0 -0.022" rpy="0 ${pi}  ${pi/2.0}" />
+            <geometry>
+                <mesh filename="package://robot_description/meshes/szyna.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+            <material name="light_grey" />
+        </visual>
+        <collision>
+            <origin xyz="0.01 0 -0.022" rpy="0 ${pi}  ${pi/2.0}" />
+            <geometry>
+                <mesh filename="package://robot_description/meshes/szyna.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+        </collision>
+    </link>
+
+     <link name="zebatka_prawa">
+        <inertial>
+            <origin xyz="0 0 0.005" rpy="0 0 0" />
+            <mass value="0.005385408521332733" />
+            <inertia ixx="3.013801810445126e-07" iyy="1.93351538560363e-07" izz="3.013998860446022e-07" ixy="1.8237856664268001e-09" iyz="-2.316325616868466e-09" ixz="-3.805422942498903e-11" />
+        </inertial>
+        <visual>
+            <origin xyz="0 0 0.005" rpy="0 0 0" />
+            <geometry>
+                <mesh filename="package://robot_description/meshes/zebatka.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+            <material name="light_grey" />
+        </visual>
+        <collision>
+            <origin xyz="0 0 0.005" rpy="0 0 0" />
+            <geometry>
+                <mesh filename="package://robot_description/meshes/zebatka.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+        </collision>
+    </link>
+    <link name="zebatka_lewa">
+        <inertial>
+            <origin xyz="0 0 0.024" rpy="${pi} 0 0" />
+            <mass value="0.005385408521332733" />
+            <inertia ixx="3.013986335629328e-07" iyy="1.9335153856052563e-07" izz="3.0138143352655133e-07" ixy="-2.316565226822523e-09" iyz="-1.8234813051508988e-09" ixz="3.835669195456637e-11" />
+        </inertial>
+        <visual>
+            <origin xyz="0 0 0.024" rpy="${pi} 0 0" />
+            <geometry>
+                <mesh filename="package://robot_description/meshes/zebatka.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+            <material name="light_grey" />
+        </visual>
+        <collision>
+            <origin xyz="0 0 0.024" rpy="${pi} 0 0" />
+            <geometry>
+                <mesh filename="package://robot_description/meshes/zebatka.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+        </collision>
+    </link>
+
+    <link name="wozek_prawy">
+        <inertial>
+            <origin xyz="0 0 -0.035" rpy="${pi} 0 ${pi/2.0}" />
+            <mass value="0.02072744141690809" />
+            <inertia ixx="2.8292824603168374e-06" iyy="1.722054892664207e-06" izz="4.2354061598071785e-06" ixy="2.8852788214184244e-15" iyz="9.571878879788276e-16" ixz="2.4381538454854024e-15" />
+        </inertial>
+        <visual>
+            <origin xyz="0 0 -0.035" rpy="${pi} 0 ${pi/2.0}" />
+            <geometry>
+                <mesh filename="package://robot_description/meshes/wozek_szyna.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+            <material name="light_grey" />
+        </visual>
+        <collision>
+            <origin xyz="0 0 -0.035" rpy="${pi} 0 ${pi/2.0}" />
+            <geometry>
+                <mesh filename="package://robot_description/meshes/wozek_szyna.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+        </collision>
+    </link>
+
+    <link name="monter_prawy">
+        <inertial>
+            <origin xyz="0 0 -0.034" rpy="${pi/2.0} ${pi} ${-pi/2.0}" />
+            <mass value="0.04168611438887957" />
+            <inertia ixx="2.0664751330705432e-05" iyy="3.227544738840932e-05" izz="1.6806594468631725e-05" ixy="-3.514487296411156e-08" iyz="1.3060352823887023e-07" ixz="-6.7893025976967155e-06" />
+        </inertial>
+        <visual>
+            <origin xyz="0 0 -0.034" rpy="${pi/2.0} ${pi} ${-pi/2.0}" />
+            <geometry>
+                <mesh filename="package://robot_description/meshes/monter_prawy.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+            <material name="green" />
+        </visual>
+        <collision>
+            <origin xyz="0 0 -0.034" rpy="${pi/2.0} ${pi} ${-pi/2.0}" />
+            <geometry>
+                <mesh filename="package://robot_description/meshes/monter_prawy.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+        </collision>
+    </link>
+
+     <link name="szyna_srodek">
+        <inertial>
+            <origin xyz="-0.004 0.04 -0.018" rpy="0 ${pi/2.0} 0" />
+            <mass value="0.09005351776720373" />
+            <inertia ixx="0.001115002161582071" iyy="0.0011156102252641228" izz="1.5811634892491135e-06" ixy="-1.2332799712022613e-18" iyz="-3.5561831257524545e-16" ixz="7.291259609965017e-18" />
+        </inertial>
+        <visual>
+            <origin xyz="-0.004 0.04 -0.018" rpy="0 ${pi/2.0} 0" />
+            <geometry>
+                <mesh filename="package://robot_description/meshes/szyna_500.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+            <material name="light_grey" />
+        </visual>
+        <collision>
+            <origin xyz="-0.004 0.04 -0.018" rpy="0 ${pi/2.0} 0" />
+            <geometry>
+                <mesh filename="package://robot_description/meshes/szyna_500.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+        </collision>
+    </link>
+
+    <link name="monter_lewy">
+        <inertial>
+            <origin xyz="0 0 -0.034" rpy="${-pi/2.0} 0 ${-pi/2.0}" />
+            <mass value="0.04168611438887958" />
+            <inertia ixx="2.066655741716182e-05" iyy="3.224333906699144e-05" izz="1.6776292233666983e-05" ixy="2.0613880196340348e-08" iyz="-4.499145233491546e-08" ixz="6.971548905961525e-06" />
+        </inertial>
+        <visual>
+            <origin xyz="0 0 -0.034" rpy="${-pi/2.0} 0 ${-pi/2.0}" />
+            <geometry>
+                <mesh filename="package://robot_description/meshes/monter_lewy.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+            <material name="green" />
+        </visual>
+        <collision>
+            <origin xyz="0 0 -0.034" rpy="${-pi/2.0} 0 ${-pi/2.0}" />
+            <geometry>
+                <mesh filename="package://robot_description/meshes/monter_lewy.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+        </collision>
+    </link>
+
+    <link name="wozek_lewy">
+        <inertial>
+            <origin xyz="0 0 -0.035" rpy="${pi} 0 ${pi/2.0}" />
+            <mass value="0.02072744141690809" />
+            <inertia ixx="2.829282460316729e-06" iyy="1.7220548926625808e-06" izz="4.235406159805444e-06" ixy="2.8857125022874186e-15" iyz="9.571743354516715e-16" ixz="2.4381741742761365e-15" />
+        </inertial>
+        <visual>
+            <origin xyz="0 0 -0.035" rpy="${pi} 0 ${pi/2.0}" />
+            <geometry>
+                <mesh filename="package://robot_description/meshes/wozek_szyna.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+            <material name="light_grey" />
+        </visual>
+        <collision>
+            <origin xyz="0 0 -0.035" rpy="${pi} 0 ${pi/2.0}" />
+            <geometry>
+                <mesh filename="package://robot_description/meshes/wozek_szyna.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+        </collision>
+    </link>
+
+     <link name="wozek_srodek">
+        <inertial>
+            <origin xyz="0 0 0" rpy="0 ${pi/2.0} 0" />
+            <mass value="0.02072744141690809" />
+            <inertia ixx="1.7220548926624724e-06" iyy="4.2354061598058775e-06" izz="2.829282460318789e-06" ixy="-9.56483156566712e-16" iyz="-2.4381809505397145e-15" ixz="2.885827698768245e-15" />
+        </inertial>
+        <visual>
+            <origin xyz="0 0 0" rpy="0 ${pi/2.0} 0" />
+            <geometry>
+                <mesh filename="package://robot_description/meshes/wozek_szyna.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+            <material name="light_grey" />
+        </visual>
+        <collision>
+            <origin xyz="0 0 0" rpy="0 ${pi/2.0} 0" />
+            <geometry>
+                <mesh filename="package://robot_description/meshes/wozek_szyna.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+        </collision>
+    </link>
+
+    <link name="monter_srodek">
+        <inertial>
+            <origin xyz="0 0 0" rpy="0 0 ${-pi/2.0}" />
+            <mass value="0.35171484845720885" />
+            <inertia ixx="8.541507879374945e-05" iyy="7.55066209638458e-05" izz="0.00011247705556501758" ixy="2.940906108916952e-09" iyz="2.228922612617333e-06" ixz="1.152349197097377e-08" />
+        </inertial>
+        <visual>
+            <origin xyz="0 0 0" rpy="0 0 ${-pi/2.0}" />
+            <geometry>
+                <mesh filename="package://robot_description/meshes/monter_z.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+            <material name="green" />
+        </visual>
+        <collision>
+            <origin xyz="0 0 0" rpy="0 0 ${-pi/2.0}" />
+            <geometry>
+                <mesh filename="package://robot_description/meshes/monter_z.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+        </collision>
+    </link>
+
+
+
+    <joint name="base_link_podstawa_prawa" type="fixed">
+        <parent link="base_link" />
+        <child link="podstawa_prawa" />
+        <origin xyz="${-base_length/2.0+0.006} ${base_width/2.0-0.04-0.0085} ${base_height}" rpy="0 0 0" />
+    </joint>
+
+    <joint name="base_link_podstawa_lewa" type="fixed">
+        <parent link="base_link" />
+        <child link="podstawa_lewa" />
+        <origin xyz="${-base_length/2.0+0.006} ${-base_width/2.0+0.04+0.0085} ${base_height}" rpy="0 0 0" />
+    </joint>
+
+    <joint name="base_link_podstawa_silnik_prawa" type="fixed">
+        <parent link="base_link" />
+        <child link="podstawa_silnik_prawa" />
+        <origin xyz="${base_length/2.0-0.0148} ${base_width/2.0-0.049} ${base_height}" rpy="0 0 0" />
+    </joint>
+
+    <joint name="base_link_podstawa_silnik_lewa" type="fixed">
+        <parent link="base_link" />
+        <child link="podstawa_silnik_lewa" />
+        <origin xyz="${base_length/2.0-0.0148} ${-base_width/2.0+0.049} ${base_height}" rpy="0 0 0" />
+    </joint>
+
+    <joint name="podstawa_silnik_prawa_nema_23_prawa" type="fixed">
+        <parent link="podstawa_silnik_prawa" />
+        <child link="nema23_prawa" />
+        <origin xyz="0 0 0.171" rpy="0 0 0" />
+    </joint>
+
+    <joint name="podstawa_silnik_lewa_nema_23_lewa" type="fixed">
+        <parent link="podstawa_silnik_lewa" />
+        <child link="nema23_lewa" />
+        <origin xyz="0 0 0.171" rpy="0 0 0" />
+    </joint>
+
+    <joint name="podstawa_silink_lewa_profil_przod" type="fixed">
+        <parent link="podstawa_silnik_lewa" />
+        <child link="profil_przod" />
+        <origin xyz="0 0 0.171" rpy="0 0 0" />
+    </joint>
+
+    <joint name="podstawa_silink_prawa_profil_prawy" type="fixed">
+        <parent link="podstawa_silnik_prawa" />
+        <child link="profil_prawy" />
+        <origin xyz="0 0 0.171" rpy="0 0 0" />
+    </joint>
+
+    <joint name="podstawa_prawa_profil_tyl" type="fixed">
+        <parent link="podstawa_prawa" />
+        <child link="profil_tyl" />
+        <origin xyz="0 0 0.171" rpy="0 0 0" />
+    </joint>
+
+    <joint name="podstawa_lewa_profil_lewy" type="fixed">
+        <parent link="podstawa_lewa" />
+        <child link="profil_lewy" />
+        <origin xyz="0 0 0.171" rpy="0 0 0" />
+    </joint>
+
+    <joint name="profil_prawy_szyna_prawa" type="fixed">
+        <parent link="profil_prawy" />
+        <child link="szyna_prawa" />
+        <origin xyz="0 0 0" rpy="0 0 0" />
+    </joint>
+
+    <joint name="profil_lewy_szyna_lewa" type="fixed">
+        <parent link="profil_lewy" />
+        <child link="szyna_lewa" />
+        <origin xyz="0 0 0" rpy="0 0 0" />
+    </joint>
+
+    <joint name="motorA_joint" type="continuous">
+        <parent link="nema23_prawa" />
+        <child link="zebatka_prawa" />
+        <origin xyz="0 0 0" rpy="0 0 0" />
+        <axis xyz="0 0 1"/>
+    </joint>
+
+    <joint name="motorB_joint" type="continuous">
+        <parent link="nema23_lewa" />
+        <child link="zebatka_lewa" />
+        <origin xyz="0 0 0" rpy="0 0 0" />
+        <axis xyz="0 0 1"/>
+    </joint>
+
+    <joint name="x_axis_joint" type="prismatic">
+        <parent link="szyna_prawa"/>
+        <child link="wozek_prawy"/>
+
+        <origin xyz="-0.2525 0 0" rpy="0 0 0" />
+        
+        <limit lower="-0.1475" 
+               upper="0.1475"
+               effort="100" velocity="100"/>
+        <axis xyz="1 0 0"/>
+    </joint>
+
+    <joint name="wozek_prawy_monter_prawy" type="fixed">
+        <parent link="wozek_prawy" />
+        <child link="monter_prawy" />
+        <origin xyz="0 0 0" rpy="0 0 0" />
+    </joint>
+
+    <joint name="monter_prawy_szyna_srodek" type="fixed">
+        <parent link="monter_prawy" />
+        <child link="szyna_srodek" />
+        <origin xyz="0 0 0" rpy="0 0 0" />
+    </joint>
+
+    <joint name="szyna_srodek_monter_lewy" type="fixed">
+        <parent link="szyna_srodek" />
+        <child link="monter_lewy" />
+        <origin xyz="0 -0.42 0" rpy="0 0 0" />
+    </joint>
+
+    <joint name="monter_lewy_wozek_lewy" type="fixed">
+        <parent link="monter_lewy" />
+        <child link="wozek_lewy" />
+        <origin xyz="0 0 0" rpy="0 0 0" />
+    </joint>
+
+    <joint name="y_axis_joint" type="prismatic">
+        <parent link="szyna_srodek" />
+        <child link="wozek_srodek" />
+        <origin xyz="0.009 -0.21 -0.0175" rpy="0 0 0" />
+        <limit lower="-0.13" 
+               upper="0.13"
+               effort="100" velocity="100"/>
+        <axis xyz="0 1 0"/>
+    </joint>
+
+    <joint name="wozek_srodek_monter_srodek" type="fixed">
+        <parent link="wozek_srodek" />
+        <child link="monter_srodek" />
+        <origin xyz="0 0 0" rpy="0 0 0" />
+    </joint>
+
+     <ros2_control name="GazeboSimSystem" type="system">
+        <hardware>
+            <plugin>gz_ros2_control/GazeboSimSystem</plugin>
+        </hardware>
+
+        <joint name="motorA_joint">
+            <command_interface name="position"/>
+            <state_interface name="position"/>
+            <state_interface name="velocity"/>
+        </joint>
+
+        <joint name="motorB_joint">
+            <command_interface name="position"/>
+            <state_interface name="position"/>
+            <state_interface name="velocity"/>
+        </joint>
+
+        <joint name="x_axis_joint">
+            <command_interface name="position"/>
+            <state_interface name="position"/>
+            <state_interface name="velocity"/>
+        </joint>
+
+        <joint name="y_axis_joint">
+            <command_interface name="position"/>
+            <state_interface name="position"/>
+            <state_interface name="velocity"/>
+        </joint>
+
+    </ros2_control>
+
+    <gazebo>
+        <plugin filename="libgz_ros2_control-system.so" name="gz_ros2_control::GazeboSimROS2ControlPlugin">
+            <robot_param>robot_description</robot_param>
+            <robot_param_node>robot_state_publisher</robot_param_node>
+            <parameters>$(find robot_bringup)/config/motor_controllers.yaml</parameters>
+            <controller_manager_prefix_node_name>controller_manager</controller_manager_prefix_node_name>
+            <hold_joints>true</hold_joints>
+            <position_proportional_gain>1.0</position_proportional_gain>
+        </plugin>
+    </gazebo>
+
+</robot>
