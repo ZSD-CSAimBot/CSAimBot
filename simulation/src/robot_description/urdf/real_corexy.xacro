@@ -94,14 +94,14 @@
             <mass value="0.20218223370563881" />
             <inertia ixx="0.000706070967420282" iyy="0.00024961511142074233" izz="0.0006694612191394805" ixy="1.1259960278757128e-05" iyz="4.083320248896363e-05" ixz="-4.5176606412776835e-06" />
         </inertial>
-        <visual name="Montaz_Robota-v18_Podstawa_Silnika_Prawa-v16_visual">
+        <visual>
             <origin xyz="0 0 0.169" rpy="${-pi/2.0} 0 ${pi}" />
             <geometry>
                 <mesh filename="package://robot_description/meshes/podstawa_silnik_prawy.stl" scale="0.001 0.001 0.001" />
             </geometry>
             <material name="green" />
         </visual>
-        <collision name="Montaz_Robota-v18_Podstawa_Silnika_Prawa-v16_collision">
+        <collision>
             <origin xyz="0 0 0.169" rpy="${-pi/2.0} 0 ${pi}" />
             <geometry>
                 <mesh filename="package://robot_description/meshes/podstawa_silnik_prawy.stl" scale="0.001 0.001 0.001" />
@@ -147,7 +147,7 @@
         <collision>
             <origin xyz="0 0 0" rpy="${pi/2.0} 0 0" />
             <geometry>
-                <mesh filename="package://robot_description/meshes/Montaz_Robota-v18_Nema_23_Dual_Shaft-v2.stl" scale="0.001 0.001 0.001" />
+                <mesh filename="package://robot_description/meshes/nema23.stl" scale="0.001 0.001 0.001" />
             </geometry>
         </collision>
     </link>
@@ -168,7 +168,7 @@
         <collision>
             <origin xyz="0.0 0.0 0.0" rpy="${pi/2.0} 0.0 0.0" />
             <geometry>
-                <mesh filename="package://robot_description/meshes/Montaz_Robota-v18_Nema_23_Dual_Shaft-v2.stl" scale="0.001 0.001 0.001" />
+                <mesh filename="package://robot_description/meshes/nema23.stl" scale="0.001 0.001 0.001" />
             </geometry>
         </collision>
     </link>
@@ -565,6 +565,7 @@
         <child link="zebatka_prawa" />
         <origin xyz="0 0 0" rpy="0 0 0" />
         <axis xyz="0 0 1"/>
+        <limit effort="30.0" velocity="50.0"/>
     </joint>
 
     <joint name="motorB_joint" type="continuous">
@@ -572,6 +573,7 @@
         <child link="zebatka_lewa" />
         <origin xyz="0 0 0" rpy="0 0 0" />
         <axis xyz="0 0 1"/>
+        <limit effort="30.0" velocity="50.0"/>
     </joint>
 
     <joint name="x_axis_joint" type="prismatic">
@@ -582,7 +584,7 @@
         
         <limit lower="-0.1475" 
                upper="0.1475"
-               effort="100" velocity="100"/>
+               effort="10.0" velocity="3.0"/>
         <axis xyz="1 0 0"/>
     </joint>
 
@@ -616,7 +618,7 @@
         <origin xyz="0.009 -0.21 -0.0175" rpy="0 0 0" />
         <limit lower="-0.13" 
                upper="0.13"
-               effort="100" velocity="100"/>
+               effort="10.0" velocity="3.0"/>
         <axis xyz="0 1 0"/>
     </joint>
 
@@ -665,6 +667,9 @@
             <controller_manager_prefix_node_name>controller_manager</controller_manager_prefix_node_name>
             <hold_joints>true</hold_joints>
             <position_proportional_gain>1.0</position_proportional_gain>
+            <position_integral_gain>0.0</position_integral_gain>
+            <position_derivative_gain>0.0</position_derivative_gain>
+
         </plugin>
     </gazebo>
 

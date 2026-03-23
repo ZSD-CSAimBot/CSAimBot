@@ -1,11 +1,19 @@
-motor_delta_commander:
+motor_to_corexy:
   ros__parameters:
-    pulley_radius: 0.03
-    x_sign: 1.0
-    y_sign: 1.0
+    pulley_radius: 0.00673
     x_limits:
-      - -0.18
-      - 0.24
+      - -0.1475
+      - 0.1475
     y_limits:
-      - -0.17
-      - 0.17
+      - -0.13
+      - 0.13
+
+distance_to_radians:
+  ros__parameters:
+    pulley_radius: 0.00673
+    x_limits:
+      - -0.1475
+      - 0.1475
+    y_limits:
+      - -0.13
+      - 0.13
