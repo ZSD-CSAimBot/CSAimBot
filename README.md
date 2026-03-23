@@ -64,18 +64,6 @@ Celem projektu jest stworzenie fizycznego AimBota do gry CSGO. Program czytałby
 
 ---
 
-## Kamienie milowe
-
-| Faza | Kategoria | Cel |
-| :--- | :--- | :--- |
-| **Milestone 1** | Software | Wykorzystanie YOLO do przetworzenia przechwyconych danych i wyznaczenia położenia przeciwnika. Skuteczność 80%. |
-| **Milestone 1** | Hardware | Wstępny projekt robota kartezjańskiego przeznaczonego do poruszania myszką na płaszczyźnie XY oraz podnoszenia w osi Z w celu przemieszczenia myszki z krawędzi. |
-| **Milestone 2** | Software | Stworzenie aplikacji pozwalającej na integrację pracy robota z danymi wejściowymi z klawiatury komputera (poruszanie robotem poprzez przytrzymywanie odpowiednich przycisków). Skuteczność YOLO 95%. |
-| **Milestone 2** | Hardware | Konstrukcja robota, realizacja projektu, integracja z warstwą aplikacji sterującej. |
-| **Milestone 3** | Soft + Hard | Integracja systemu przetwarzania danych z aplikacją do sterowania robota w celu automatycznego namierzania przeciwników. Finalizacja projektu, stworzenie instalatora aplikacji, przygotowanie półautomatycznej kalibracji. |
-
----
-
 ## Zespół projektowy
 * Tomasz Nazar
 * Filip Pietrzak
