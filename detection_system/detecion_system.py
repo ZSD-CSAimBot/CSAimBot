@@ -36,15 +36,17 @@ class AimBot:
         self.model = YOLO(model_path, task='detect')
         self.camera = bettercam.create(output_color="BGRA", region=self.REGION)
 
-        self.cv2_frame = None
-        self.target_fps = 60
-        self.frame_time = 1.0 / self.target_fps
+        self.captured_frame = None
+        target_fps = 60
+        self.target_frame_time = 1.0 / target_fps
 
         self.prepare_tensors()
 
 
     def cleanup(self):
-        """Releases hardware resources and clears memory allocations."""
+        """
+        Releases hardware resources and clears memory allocations.
+        """
         self.camera.release()
         print("Camera released!")
 
@@ -67,13 +69,13 @@ class AimBot:
 
 
     def capture_frame(self):
-        """Captures a single frame from the defined screen region."""
-        frame = self.camera.grab()
+        """
+        Captures a single frame from the defined screen region.
+        """
+        self.captured_frame = self.camera.grab()
 
-        if frame is None:
+        if self.captured_frame is None:
             return False
-
-        self.cv2_frame = frame.copy()
 
         return True
     
@@ -96,28 +98,37 @@ class AimBot:
         self.model_tensor.div_(255.0)
 
 
-    def display_results(self, results):
+    def display_results(self, results, start_time):
         """
         Draws bounding boxes on the captured frame for debugging purposes.
 
         Args:
             results (list): Output results from the YOLO model.
+            start_time (float): The time when the frame capture started.
         """
-        if self.cv2_frame is None or results[0].boxes is None:
+        if self.captured_frame is None or results[0].boxes is None:
             return
         
         boxes = results[0].boxes.xyxy.cpu().numpy()
         
         for box in boxes:
             x1, y1, x2, y2 = map(int, box)
-            cv2.rectangle(self.cv2_frame, (x1, y1), (x2, y2), (0, 255, 0, 255), 2)
+            cv2.rectangle(self.captured_frame, (x1, y1), (x2, y2), (0, 255, 0, 255), 2)
             
-        cv2.imshow("Aimbot Vision (Debug)", self.cv2_frame)
+        cv2.imshow("Aimbot Vision (Debug)", self.captured_frame)
         cv2.waitKey(1)
+
+        # Cap the framerate to prevent unnecessary CPU/GPU usage
+        elapsed_time = time.perf_counter() - start_time
+        
+        if elapsed_time < self.target_frame_time:
+            time.sleep(self.target_frame_time - elapsed_time)
 
 
     def run(self):
-        """Main execution loop for capturing, processing, and displaying frames."""
+        """
+        Main execution loop for capturing, processing, and displaying frames.
+        """
         try:
             while True:
                 start_time = time.perf_counter()
@@ -125,27 +136,22 @@ class AimBot:
                 if not self.capture_frame():
                     continue
 
-                self.preprocess_frame(self.cv2_frame)
+                self.preprocess_frame(self.captured_frame)
 
                 results = self.model(self.model_tensor, verbose=False)
                 torch.cuda.synchronize()
 
-                self.display_results(results)
-
-                # Cap the framerate to prevent unnecessary CPU/GPU usage
-                elapsed_time = time.perf_counter() - start_time
-                sleep_time = self.frame_time - elapsed_time
-                if sleep_time > 0:
-                    time.sleep(sleep_time)
+                self.display_results(results, start_time)
 
         except KeyboardInterrupt:
             print("Exiting due to keyboard interrupt...")
+
         finally:
             self.cleanup()
             print("Exited from the loop!")
 
 
 if __name__ == "__main__":
-    MODEL_PATH = os.path.abspath('./detection_system/yolo/training/Beta_v2/weights/best.engine')
+    MODEL_PATH = os.path.abspath('./detection_system/yolo/training/Beta_v3/weights/best.engine')
     aimbot = AimBot(model_path=MODEL_PATH)
     aimbot.run()
