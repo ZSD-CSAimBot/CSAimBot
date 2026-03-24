@@ -1,0 +1,11 @@
+motor_delta_commander:
+  ros__parameters:
+    pulley_radius: 0.03
+    x_sign: 1.0
+    y_sign: 1.0
+    x_limits:
+      - -0.18
+      - 0.24
+    y_limits:
+      - -0.17
+      - 0.17

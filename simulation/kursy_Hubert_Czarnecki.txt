@@ -1,0 +1,1 @@
+W celu swtorzenia symulacji w Gazebo wykorzystujac ROS2 w tym tygodniu ukończyłem kurs ROS : https://www.udemy.com/course/ros2-for-beginners/

@@ -26,8 +26,8 @@ Celem projektu jest stworzenie fizycznego AimBota do gry CSGO. Program czytałby
 ## Stack technologiczny
 
 **Sprzęt - robot:**
-* Mikrokontrolery, diody led, sterowniki silników.
-* Silniki krokowe np. NEMA 17, śruba kulowa/trapezowa.
+* Mikrokontroler esp32, sterowniki silników.
+* Silniki krokowe NEMA 23, śruba kulowa/trapezowa.
 * Zasilacz, przetwornice step-down.
 * Wydrukowane ramię robota i chwytak, serwo do obsługi chwytaka.
 
@@ -37,7 +37,7 @@ Celem projektu jest stworzenie fizycznego AimBota do gry CSGO. Program czytałby
 **Oprogramowanie:**
 * Język Python/ C/C++ i odpowiednie biblioteki, YOLO.
 * PyCharm, Arduino IDE, VSC.
-* Komunikacja szeregowa np. SPI, UART, Wi-Fi, USB.
+* Komunikacja szeregowa np. UART, TCP/IP, USB.
 * Algorytmy kinematyki odwrotnej.
 
 ---
@@ -58,21 +58,9 @@ Celem projektu jest stworzenie fizycznego AimBota do gry CSGO. Program czytałby
 * Program będzie wykrywał czy użytkownik trzyma pistolet czy karabin za pomocą klasycznej wizji maszynowej (template matching z openCV). Jeśli gracz trzyma pistolet lub karabin snajperski, to kompensacja odrzutu będzie wyłączona. W przeciwnym wypadku program będzie korygował odrzut konkretnych broni (AK47/M4A1).
 
 ### Założenia gry
-* Program będzie działał tylko podczas rozpoczętej rundy, na konkretnej mapie (DUST2).
-* Gra musi być ustawiona na minimum 30 FPS. Wymagane włączenie opcji natychmiastowego usuwania ciał po zabójstwie w grze lokalnej.
+* Program będzie działał tylko podczas rozpoczętej rundy, na dowolnej mapie.
+* Gra musi być ustawiona na minimum 60 FPS. Wymagane włączenie opcji natychmiastowego usuwania ciał po zabójstwie w grze lokalnej.
 * Czas reakcji przy eDPI dobranym tak, aby robot nie musiał podnosić myszy będzie wynosił maksymalnie tyle ile czas reakcji dobrego gracza (<200ms).
-
----
-
-## Kamienie milowe
-
-| Faza | Kategoria | Cel |
-| :--- | :--- | :--- |
-| **Milestone 1** | Software | Wykorzystanie YOLO do przetworzenia przechwyconych danych i wyznaczenia położenia przeciwnika. Skuteczność 65%. |
-| **Milestone 1** | Hardware | Wstępny projekt robota kartezjańskiego przeznaczonego do poruszania myszką na płaszczyźnie XY oraz podnoszenia w osi Z w celu przemieszczenia myszki z krawędzi. |
-| **Milestone 2** | Software | Stworzenie aplikacji pozwalającej na integrację pracy robota z danymi wejściowymi z klawiatury komputera (poruszanie robotem poprzez przytrzymywanie odpowiednich przycisków). |
-| **Milestone 2** | Hardware | Konstrukcja robota, realizacja projektu, integracja z warstwą aplikacji sterującej. |
-| **Milestone 3** | Soft + Hard | Integracja systemu przetwarzania danych z aplikacją do sterowania robota w celu automatycznego namierzania przeciwników. Finalizacja projektu, stworzenie instalatora aplikacji, przygotowanie półautomatycznej kalibracji. |
 
 ---
 
