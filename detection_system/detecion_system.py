@@ -152,6 +152,6 @@ class AimBot:
 
 
 if __name__ == "__main__":
-    MODEL_PATH = os.path.abspath('./detection_system/yolo/training/Beta_v2/weights/best.engine')
+    MODEL_PATH = os.path.abspath('./detection_system/yolo/training/Beta_v3/weights/best.engine')
     aimbot = AimBot(model_path=MODEL_PATH)
     aimbot.run()
