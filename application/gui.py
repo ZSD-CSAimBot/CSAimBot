@@ -38,7 +38,7 @@ class GUI:
         self.chk_vision = ttk.Checkbutton(frame_vision, text="Pokaż okienko OpenCV (Debug)", variable=self.var_vision, command=self.update_settings)
         self.chk_vision.pack(anchor="w")
 
-    def update_settings(self, event=None):
+    def update_settings(self):
         self.aimbot.show_debug_window = self.var_vision.get()
 
     def start_aimbot(self):
