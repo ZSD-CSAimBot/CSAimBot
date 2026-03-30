@@ -1,63 +1,40 @@
-import threading
-import tkinter as tk
-from tkinter import ttk
-
+import dearpygui.dearpygui as dpg
 
 class GUI:
-    """
-    Graphical User Interface for controlling the AimBot.
-    """
-    def __init__(self, root, aimbot):
-        self.root = root
-        self.aimbot = aimbot
-        self.bot_thread = None
+    def __init__(self, pipe_conn):
+        self.pipe = pipe_conn
+        
+        dpg.create_context()
+        dpg.create_viewport(title='CSAimBot Control Panel', width=450, height=250, resizable=False)
+        dpg.setup_dearpygui()
 
-        self.root.title("CSAimBot Control Panel")
-        self.root.geometry("300x160")
-        self.root.resizable(False, False)
+        with dpg.window(label="Main Window", width=450, height=250, no_collapse=True, no_close=True, no_move=True, no_title_bar=True):
+            dpg.add_text("CSAimBot", color=[100, 200, 255])
+            dpg.add_separator()
+            dpg.add_spacer(height=10)
 
-        style = ttk.Style()
-        style.theme_use('vista')
+            dpg.add_text("Detection Control")
+            with dpg.group(horizontal=True):
+                self.btn_start = dpg.add_button(label="START", width=200, height=40, callback=self.on_start)
+                self.btn_stop = dpg.add_button(label="STOP", width=200, height=40, callback=self.on_stop)
 
-        self.create_widgets()
+            dpg.add_spacer(height=15)
 
-    def create_widgets(self):
-        frame_controls = ttk.LabelFrame(self.root, text="Kontrola Detekcji", padding=(10, 10))
-        frame_controls.pack(fill="x", padx=10, pady=10)
+            dpg.add_text("Debugging")
+            self.chk_debug = dpg.add_checkbox(label="Show OpenCV window", default_value=True, callback=self.on_debug_toggle)
 
-        self.btn_start = ttk.Button(frame_controls, text="START", command=self.start_aimbot)
-        self.btn_start.pack(side="left", expand=True, fill="x", padx=5)
+    def on_start(self, sender, app_data):
+        self.pipe.send({"cmd": "START"})
 
-        self.btn_stop = ttk.Button(frame_controls, text="STOP", command=self.stop_aimbot, state="disabled")
-        self.btn_stop.pack(side="right", expand=True, fill="x", padx=5)
+    def on_stop(self, sender, app_data):
+        self.pipe.send({"cmd": "STOP"})
 
-        frame_vision = ttk.LabelFrame(self.root, text="Wizualizacja", padding=(10, 10))
-        frame_vision.pack(fill="x", padx=10, pady=5)
+    def on_debug_toggle(self, sender, app_data):
+        self.pipe.send({"cmd": "DEBUG", "value": app_data})
 
-        self.var_vision = tk.BooleanVar(value=True)
-        self.chk_vision = ttk.Checkbutton(frame_vision, text="Pokaż okienko OpenCV (Debug)", variable=self.var_vision, command=self.update_settings)
-        self.chk_vision.pack(anchor="w")
-
-    def update_settings(self):
-        self.aimbot.show_debug_window = self.var_vision.get()
-
-    def start_aimbot(self):
-        if not self.aimbot.is_running:
-            self.aimbot.is_running = True
-            self.update_settings()
-            self.aimbot_thread = threading.Thread(target=self.aimbot.run, daemon=True)
-            self.aimbot_thread.start()
-            
-            self.btn_start.config(state="disabled")
-            self.btn_stop.config(state="normal")
-
-    def stop_aimbot(self):
-        if self.aimbot.is_running:
-            self.aimbot.is_running = False
-            self.btn_start.config(state="normal")
-            self.btn_stop.config(state="disabled")
-
-    def on_closing(self):
-        self.stop_aimbot()
-        self.root.destroy()
-        self.aimbot.cleanup()
+    def run(self):
+        dpg.show_viewport()
+        dpg.start_dearpygui()
+        
+        self.pipe.send({"cmd": "QUIT"})
+        dpg.destroy_context()
