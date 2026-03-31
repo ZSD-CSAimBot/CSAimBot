@@ -8,7 +8,8 @@ NIE URUCHOMISZ ŻADNEJ INNEJ WERSJI MAJĄC FOLDER ADDONS W PLIKACH GRY, PRZENIE�
 Linki:
 1: sourcemod.net/downloads.php
 2: metamodsource.net/downloads.php
-3: https://forums.alliedmods.net/showthread.php?t=67640
+3: https://forums.alliedmods.net/showthread.php?t=67640 <--- Modyfikowano plik include.inc, działająca wersja znajduje się w folderze.
+
 
 Wszystkie potrzebne narzędzia do pluginu znajdują się już w folderze calibration, jeśli jednak coś się zapsuje to pod wyżej wymienionymi linkami znajdują się potrzebne do setupu pliki.
 
