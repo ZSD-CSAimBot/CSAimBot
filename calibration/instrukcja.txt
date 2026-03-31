@@ -2,6 +2,8 @@ system kalibracji- setup i informacje o pluginie
 
 -----WAŻNE-------
 URUCHOM CS:GO Z PARAMETREM -insecure
+NIE URUCHOMISZ ŻADNEJ INNEJ WERSJI MAJĄC FOLDER ADDONS W PLIKACH GRY, PRZENIEŚ JE JAK CHCESZ KORZYSTAĆ WE WŁASNYM ZAKRESIE
+
 
 Linki:
 1: sourcemod.net/downloads.php
