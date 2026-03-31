@@ -1,0 +1,25 @@
+system kalibracji- setup i informacje o pluginie
+
+-----WAŻNE-------
+URUCHOM CS:GO Z PARAMETREM -insecure
+
+Linki:
+1: sourcemod.net/downloads.php
+2: metamodsource.net/downloads.php
+3: https://forums.alliedmods.net/showthread.php?t=67640
+
+Wszystkie potrzebne narzędzia do pluginu znajdują się już w folderze calibration, jeśli jednak coś się zapsuje to pod wyżej wymienionymi linkami znajdują się potrzebne do setupu pliki.
+
+
+SKRÓCONA INSTRUKCJA:
+
+1. Pobieramy wszystkie pliki z linków.
+2. Foldery addons z sourcemod i metamodsource łączymy w jeden folder i dodajmy do głównego folderu cs:go.
+3. Z socket_3.0.1\addons\sourcemod\scripting bierzemy plik socket.inc i przerzucamy do csgo/addons/sourcemod/scripting/include/ 
+4. Z socket_3.0.1\addons\sourcemod\extensions bierzemy socket.ext.dll i przerzucamy do csgo/addons/sourcemod/extensions/
+5. Naszym kompilatorem jest plik plik csgo/addons/sourcemod/scripting/spcomp.exe. W folderze scripting tworzymy/kopiujemy plik wysylacz.sp a następnie kompilujemy go za pomocą spcomp.exe (przeciagnij wysylacz.sp na spcomp.exe
+lub użyj spcomp.exe wysylacz.sp w cmd).
+6. Po kompilacji powstanie nam plik wysylacz.smx, przenosimy go to folderu csgo\addons\sourcemod\plugins
+7. Włącz w tle skrypt python map_echo.py.
+
+Jeśli wszystko jest poprawnie skonfigurowane to w skrypcie map_echo.py powinny wyświetlać się współrzędne impaktów kul, będzie to potrzebne do kalibracji w przyszłości.
