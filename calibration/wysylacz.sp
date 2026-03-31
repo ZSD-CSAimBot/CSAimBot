@@ -10,18 +10,17 @@ public void OnPluginStart() {
     // Tworzymy gniazdo UDP
     g_hSocket = SocketCreate(SOCKET_UDP, OnSocketError);
     
-    // Zamiast strzelać w ciemno, nawiązujemy "stałe" połączenie z Pythonem
+    // stałe połączenie z pythonem
     SocketConnect(g_hSocket, OnSocketConnected, OnSocketReceive, OnSocketDisconnected, "127.0.0.1", 5000);
 }
 
-// Ta funkcja odpali się automatycznie, gdy gra pomyślnie zlokalizuje adres Pythona
 public void OnSocketConnected(Handle socket, any arg) {
     g_bConnected = true;
-    PrintToServer("--- WYSYLACZ: Pomyslnie polaczono z Pythonem! ---");
+    PrintToServer("Połączona z Pythonem");
 }
 
 public void OnSocketReceive(Handle socket, char[] receiveData, const int dataSize, any arg) {
-    // Ignorujemy (Python nic do gry nie wysyła, on tylko słucha)
+    // Ignorujemy sygnały od pythona
 }
 
 public void OnSocketDisconnected(Handle socket, any arg) {
@@ -34,7 +33,7 @@ public void OnSocketError(Handle socket, const int errorType, const int errorNum
 }
 
 public Action Event_BulletImpact(Event event, const char[] name, bool dontBroadcast) {
-    // Jeśli z jakiegoś powodu nie jesteśmy połączeni, nie wysyłamy (omijamy błąd)
+    // Jeśli nie jesteśmy połączeni, nie wysyłamy
     if (!g_bConnected) {
         return Plugin_Continue; 
     }
@@ -49,7 +48,6 @@ public Action Event_BulletImpact(Event event, const char[] name, bool dontBroadc
         char buffer[256];
         Format(buffer, sizeof(buffer), "IMPACT;%N;%.2f;%.2f;%.2f", client, x, y, z);
         
-        // Używamy zwykłego SocketSend (bez IP i portu, bo to ustaliliśmy wyżej)
         SocketSend(g_hSocket, buffer); 
     }
     return Plugin_Continue;
