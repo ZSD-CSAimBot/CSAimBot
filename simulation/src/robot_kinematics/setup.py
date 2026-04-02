@@ -25,7 +25,7 @@ setup(
     entry_points={
         'console_scripts': [
             'motor_to_corexy = robot_kinematics.motor_to_corexy:main',
-            'distance_to_radians = robot_kinematics.distance_to_radians:main',
+            'distance_to_radians = robot_kinematics.distance_to_radians:main'
         ],
     },
 )

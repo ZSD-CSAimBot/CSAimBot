@@ -27,7 +27,19 @@
           args="motor_position_controller --controller-manager /controller_manager --controller-manager-timeout 120"/>
 
     <node pkg="controller_manager" exec="spawner" output="screen"
+          args="belt_position_controller --controller-manager /controller_manager --controller-manager-timeout 120"/>
+
+    <node pkg="controller_manager" exec="spawner" output="screen"
           args="xy_position_controller --controller-manager /controller_manager --controller-manager-timeout 120"/>
+
+    <node pkg="controller_manager" exec="spawner" output="screen"
+          args="z_position_controller --controller-manager /controller_manager --controller-manager-timeout 120"/>
+
+    <node pkg="controller_manager" exec="spawner" output="screen"
+          args="gripper_position_controller --controller-manager /controller_manager --controller-manager-timeout 120"/>
+    
+    <node pkg="controller_manager" exec="spawner" output="screen"
+          args="click_position_controller --controller-manager /controller_manager --controller-manager-timeout 120"/>
 
     <node pkg="robot_kinematics" exec="motor_to_corexy" output="screen">
         <param from="$(find-pkg-share robot_bringup)/config/corexy_kinematics.yaml"/>
