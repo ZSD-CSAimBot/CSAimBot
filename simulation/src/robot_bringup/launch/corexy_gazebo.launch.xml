@@ -51,6 +51,22 @@
         <param name="use_sim_time" value="true"/>
     </node>
 
+    <node pkg="robot_kinematics" exec="belt" output="screen">
+        <param name="use_sim_time" value="true"/>
+    </node>
+
+    <node pkg="robot_kinematics" exec="gripper" output="screen">
+        <param name="use_sim_time" value="true"/>
+    </node>
+
+    <node pkg="robot_kinematics" exec="move_z" output="screen">
+        <param name="use_sim_time" value="true"/>
+    </node>
+
+    <node pkg="robot_kinematics" exec="mouse_click" output="screen">
+        <param name="use_sim_time" value="true"/>
+    </node>
+
     <node pkg="rviz2" exec="rviz2" output="screen" args="-d $(var rviz_config_path)">
         <param name="use_sim_time" value="true"/>
     </node>

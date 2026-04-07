@@ -634,18 +634,12 @@
             </geometry>
             <material name="grey" />
         </visual>
-        <collision>
-            <origin xyz="0 0 -0.112" rpy="${pi/2.0} 0 0"  />
-            <geometry>
-                <mesh filename="package://robot_description/meshes/sruba.stl" scale="0.001 0.001 0.001" />
-            </geometry>
-        </collision>
     </link>
 
     <link name="nakretka">
         <inertial>
             <origin xyz="0 0 0" rpy="${-pi/2.0} 0 0"  />
-            <mass value="8.379933e+00"/>
+            <mass value="8.379933e-03"/>
             <inertia ixx="1.936e-01" ixy="8.056e-03" ixz="2.673e-03" iyy="2.878e-01" iyz="1.029e-02" izz="4.269e-01"/>
         </inertial>
         <visual>
@@ -655,12 +649,6 @@
             </geometry>
             <material name="dark_grey" />
         </visual>
-        <collision>
-            <origin xyz="0 0 0" rpy="${-pi/2.0} 0 0"  />
-            <geometry>
-                <mesh filename="package://robot_description/meshes/nakretka.stl" scale="0.001 0.001 0.001" />
-            </geometry>
-        </collision>
     </link>
 
     <link name="monter_chwytak">
@@ -1177,10 +1165,10 @@
     <joint name="z_linear_axis_joint" type="prismatic">
         <parent link="nema17" />
         <child link="nakretka" />
-        <origin xyz="0 0 -0.054" rpy="0 0 0" />
-        <limit lower="-0.006" 
-               upper="0.006"
-               effort="10.0" velocity="3.0"/>
+        <origin xyz="0 0 -0.048" rpy="0 0 0" />
+        <limit lower="-0.05" 
+               upper="0.0"
+               effort="100.0" velocity="3.0"/>
         <axis xyz="0 0 1"/>
     </joint>
 
@@ -1410,7 +1398,7 @@
             <state_interface name="velocity"/>
         </joint>
 
-                <joint name="motorA_joint_-1">
+        <joint name="motorA_joint_-1"> 
             <command_interface name="position"/>
             <state_interface name="position"/>
             <state_interface name="velocity"/>
