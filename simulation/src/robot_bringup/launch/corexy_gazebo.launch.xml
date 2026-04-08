@@ -1,9 +1,14 @@
 <launch>
-    <set_env name="GZ_SIM_RESOURCE_PATH" value="$(env GZ_SIM_RESOURCE_PATH ''):$(find-pkg-prefix robot_description)/share" />
+    <set_env
+    name="GZ_SIM_RESOURCE_PATH"
+    value="$(env GZ_SIM_RESOURCE_PATH ''):$(find-pkg-prefix robot_description)/share:$(find-pkg-prefix robot_bringup)/share" />
     <let name="urdf_path" 
          value="$(find-pkg-share robot_description)/urdf/real_corexy.xacro"/>
     <let name="rviz_config_path" 
          value="$(find-pkg-share robot_description)/rviz/urdf_config.rviz"/>
+
+    <let name="world_path" 
+         value="$(find-pkg-share robot_bringup)/world/corexy.sdf"/>
 
     <node pkg="robot_state_publisher" exec="robot_state_publisher">
         <param name="robot_description" value="$(command 'xacro $(var urdf_path)')"/>
@@ -11,7 +16,7 @@
     </node>
 
     <include file="$(find-pkg-share ros_gz_sim)/launch/gz_sim.launch.py">
-        <arg name="gz_args" value="empty.sdf -r"/>
+        <arg name="gz_args" value="$(var world_path) -r"/>
     </include>
 
     <include file="$(find-pkg-share ros_gz_bridge)/launch/clock_bridge.launch">

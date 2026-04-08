@@ -5,6 +5,7 @@ from __future__ import annotations
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float64MultiArray
+from sensor_msgs.msg import JointState
 import math
 
 
@@ -16,8 +17,6 @@ class MotorToCorexyNode(Node):
         self.declare_parameter("motor_command_topic", "/motor_position_controller/commands")
         self.declare_parameter("xy_command_topic", "/xy_position_controller/commands")
 
-        self.declare_parameter("initial_motor_positions", [0.0, 0.0])
-        self.declare_parameter("initial_xy_positions", [0.0, 0.0])
         self.declare_parameter("pulley_radius", 0.00637)
         self.declare_parameter("x_limits", [-0.1475, 0.1475])
         self.declare_parameter("y_limits", [-0.13, 0.13])
@@ -27,29 +26,50 @@ class MotorToCorexyNode(Node):
         self.radians_topic = self.get_parameter("radians_topic").value
         self.motor_command_topic = self.get_parameter("motor_command_topic").value
         self.xy_command_topic = self.get_parameter("xy_command_topic").value
-        
+
         self.control_rate = self.get_parameter("control_rate_hz").value
         self.max_velocity = self.get_parameter("xy_max_velocity").value
-        
-        initial_motor_positions = self.get_parameter("initial_motor_positions").value
-        initial_xy_positions = self.get_parameter("initial_xy_positions").value
-   
-        self.target_xy_positions = [initial_xy_positions[0], initial_xy_positions[1]]
-        
-        self.current_motor_positions = [initial_motor_positions[0], initial_motor_positions[1]]
-        self.current_xy_positions = [initial_xy_positions[0], initial_xy_positions[1]]
-
         self.pulley_radius = self.get_parameter("pulley_radius").value
         self.x_limits = self.parse_limits("x_limits")
         self.y_limits = self.parse_limits("y_limits")
 
+        self.target_xy_positions = [0.0, 0.0]
+        self.current_motor_positions = [0.0, 0.0]
+        self.current_xy_positions = [0.0, 0.0]
+        self.is_initialized = False  
+
+
         self.motor_command_publisher = self.create_publisher(Float64MultiArray, self.motor_command_topic, 10)
         self.xy_command_publisher = self.create_publisher(Float64MultiArray, self.xy_command_topic, 10)
         self.create_subscription(Float64MultiArray, self.radians_topic, self.on_delta_command, 10)
+        self.create_subscription(JointState, '/joint_states', self.joint_states_callback, 10)
 
         self.timer = self.create_timer(1.0 / self.control_rate, self.control_loop)
+        
+
+    def joint_states_callback(self, msg: JointState):
+        if self.is_initialized:
+            return
+
+        motor_a_idx = msg.name.index("motorA_joint")
+        motor_b_idx = msg.name.index("motorB_joint")
+        x_idx = msg.name.index("x_axis_joint")
+        y_idx = msg.name.index("y_axis_joint")
+
+        self.current_motor_positions[0] = msg.position[motor_a_idx]
+        self.current_motor_positions[1] = msg.position[motor_b_idx]
+        self.current_xy_positions[0] = msg.position[x_idx]
+        self.current_xy_positions[1] = msg.position[y_idx]
+
+        self.target_xy_positions[0] = self.current_xy_positions[0]
+        self.target_xy_positions[1] = self.current_xy_positions[1]
+
+        self.is_initialized = True
 
     def on_delta_command(self, msg: Float64MultiArray):
+        if not self.is_initialized:
+            return
+
         if len(msg.data) < 2:
             self.get_logger().error("Wrong data")
             return
@@ -76,6 +96,9 @@ class MotorToCorexyNode(Node):
         return min(max(value, limits[0]), limits[1])
 
     def control_loop(self):
+        if not self.is_initialized:
+            return
+
         dt = 1.0 / self.control_rate
 
         dx = self.target_xy_positions[0] - self.current_xy_positions[0]
