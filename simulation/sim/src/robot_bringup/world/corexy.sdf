@@ -1,0 +1,67 @@
+<?xml version="1.0"?>
+<sdf version="1.8">
+  <world name="prosty_swiat">
+
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+
+    <physics name="default_physics" type="ode">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+      <real_time_update_rate>1000</real_time_update_rate>
+    </physics>
+
+    <include>
+      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Sun</uri>
+    </include>
+
+    <include>
+      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Ground Plane</uri>
+    </include>
+
+     <model name="myszka">
+      <pose>-0.02 0.005 0.042 0 0 -1.57</pose>
+      <link name="myszka_link">
+        
+        <inertial>
+          <mass>0.09</mass> 
+          <inertia>
+            <ixx>1.006e-03</ixx>
+            <ixy>1.7663e-08</ixy>
+            <ixz>-2.218e-09</ixz>
+            <iyy>3.696e-04</iyy>
+            <iyz>1.2939571e-05</iyz>
+            <izz>1.235e-03</izz>
+          </inertia>
+        </inertial>
+
+        <visual name="myszka_visual">
+          <geometry>
+            <mesh>
+              <uri>package://robot_bringup/meshes/mouse.stl</uri>
+              <scale>0.001 0.001 0.001</scale>
+            </mesh>
+          </geometry>
+          <material>
+            <ambient>1.0 0.4 0.7 1.0</ambient>
+            <diffuse>1.0 0.2 0.6 1.0</diffuse>
+            <specular>1.0 0.8 0.9 1.0</specular>
+          </material>
+        </visual>
+
+        <collision name="myszka_collision">
+          <geometry>
+            <mesh>
+              <uri>package://robot_bringup/meshes/mouse.stl</uri>
+              <scale>0.001 0.001 0.001</scale>
+            </mesh>
+          </geometry>
+        </collision>
+
+      </link>
+    </model>
+    
+
+  </world>
+</sdf>
