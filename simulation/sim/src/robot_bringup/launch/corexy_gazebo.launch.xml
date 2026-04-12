@@ -75,4 +75,9 @@
     <node pkg="rviz2" exec="rviz2" output="screen" args="-d $(var rviz_config_path)">
         <param name="use_sim_time" value="true"/>
     </node>
+
+    <node pkg="rosbridge_server" exec="rosbridge_websocket" output="screen">
+        <param name="port" value="9090"/>
+    </node>
+    
 </launch>
