@@ -8,9 +8,10 @@ ultralytics==8.4.26
 torch==2.10.0+cu128
 torchvision==0.25.0+cu128
 tensorrt_cu12==10.15.1.29
-cupy-cuda12x
 dearpygui==2.2
 numpy==2.3.5
 
 bettercam==1.0.0; sys_platform == 'win32'
+cupy-cuda12x==13.6.0; sys_platform == 'win32'
+
 mss==10.1.0; sys_platform == 'linux' # nvfbc-python does not have a PyPI package, so we will need to install it manually on Linux. For now, we can use mss as a placeholder for screen capture on Linux.

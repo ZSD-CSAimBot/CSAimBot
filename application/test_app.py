@@ -5,8 +5,8 @@ from unittest.mock import MagicMock, patch
 
 import torch
 import cv2
-import camera
-import detection_system
+import detection_system.camera as camera
+import detection_system.aimbot as aimbot
 
 
 # ==============================================================================
@@ -65,7 +65,7 @@ def aimbot():
             patch("detection_system.YOLO", mock_yolo_class), \
             patch("detection_system.torch.zeros", return_value=fake_tensor), \
             patch("detection_system.torch.empty", return_value=fake_tensor):
-        bot = detection_system.AimBot("fake_model.engine")
+        bot = aimbot.AimBot("fake_model.engine")
         yield bot
 
 
@@ -79,7 +79,7 @@ def gui_app():
     mock_dpg.group.return_value.__exit__ = MagicMock(return_value=False)
 
     with patch.dict("sys.modules", {"dearpygui": MagicMock(), "dearpygui.dearpygui": mock_dpg}):
-        from gui import GUI
+        from gui_design.gui import GUI
         pipe = MagicMock()
         app = GUI(pipe)
         yield app
@@ -300,7 +300,7 @@ class TestAimBotCleanup:
 class TestVisionWorker:
 
     def _run_worker(self, messages, mock_aimbot_instance):
-        from detection_system import vision_worker
+        from detection_system.aimbot import vision_worker
 
         pipe = MagicMock()
         pipe.poll.side_effect = [True] * len(messages) + [False] * 1000
@@ -325,7 +325,7 @@ class TestVisionWorker:
         pipe.poll.side_effect = poll_side
         pipe.recv.side_effect = [{"cmd": "START"}, {"cmd": "QUIT"}]
 
-        from detection_system import vision_worker
+        from detection_system.aimbot import vision_worker
         with patch("detection_system.AimBot", return_value=mock_aimbot), \
                 patch("detection_system.time.sleep"), \
                 patch("detection_system.time.perf_counter", side_effect=[0.0, 0.02]), \
