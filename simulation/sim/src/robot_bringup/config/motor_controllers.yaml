@@ -1,0 +1,78 @@
+controller_manager:
+  ros__parameters:
+    update_rate: 100
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    motor_position_controller:
+      type: position_controllers/JointGroupPositionController
+
+    belt_position_controller:
+      type: position_controllers/JointGroupPositionController
+
+
+    xy_position_controller:
+      type: position_controllers/JointGroupPositionController
+
+    gripper_position_controller:
+      type: position_controllers/JointGroupPositionController
+
+    z_position_controller:
+      type: position_controllers/JointGroupPositionController
+
+    click_position_controller:
+      type: position_controllers/JointGroupPositionController
+
+motor_position_controller:
+  ros__parameters:
+    type: position_controllers/JointGroupPositionController
+    joints:
+      - motorA_joint
+      - motorB_joint
+
+belt_position_controller:
+  ros__parameters:
+    type: position_controllers/JointGroupPositionController
+    joints:
+      - motorA_joint_-1
+      - motorA_joint_1
+      - motorA_joint_2
+      - motorA_joint_3
+      - motorB_joint_-1
+      - motorB_joint_1
+      - motorB_joint_2
+      - motorB_joint_3
+
+xy_position_controller:
+  ros__parameters:
+    type: position_controllers/JointGroupPositionController
+    joints:
+      - x_axis_joint
+      - y_axis_joint
+
+z_position_controller:
+  ros__parameters:
+    type: position_controllers/JointGroupPositionController
+    joints:
+      - z_angular_axis_joint
+      - z_linear_axis_joint
+
+gripper_position_controller:
+  ros__parameters:
+    type: position_controllers/JointGroupPositionController
+    joints:
+      - servo_joint
+      - gripper_right_joint
+      - gripper_left_joint
+
+click_position_controller:
+  ros__parameters:
+    type: position_controllers/JointGroupPositionController
+    joints:
+      - right_click_joint
+      - left_click_joint
+
+joint_state_broadcaster:
+  ros__parameters:
+    type: joint_state_broadcaster/JointStateBroadcaster
