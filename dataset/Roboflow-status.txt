@@ -1,5 +1,5 @@
 Status na 10:11 dnia 24.03.2026:
-Antoni: 1861/2067 annotated
+Antoni: 1509/2067 annotated
 Łukasz: 991/2068 annotated
 
 Link do wersji BETA 2.0 Datasetu (3387zdjec, 303valid, 152test): 

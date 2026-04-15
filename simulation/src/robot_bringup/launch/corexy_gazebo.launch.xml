@@ -1,0 +1,41 @@
+<launch>
+    <let name="urdf_path" 
+         value="$(find-pkg-share robot_description)/urdf/corexy.urdf.xacro"/>
+    <let name="rviz_config_path" 
+         value="$(find-pkg-share robot_description)/rviz/urdf_config.rviz"/>
+
+    <node pkg="robot_state_publisher" exec="robot_state_publisher">
+        <param name="robot_description" value="$(command 'xacro $(var urdf_path)')"/>
+        <param name="use_sim_time" value="true"/>
+    </node>
+
+    <include file="$(find-pkg-share ros_gz_sim)/launch/gz_sim.launch.py">
+        <arg name="gz_args" value="empty.sdf -r"/>
+    </include>
+
+    <include file="$(find-pkg-share ros_gz_bridge)/launch/clock_bridge.launch">
+        <arg name="bridge_name" value="clock_bridge"/>
+    </include>
+
+    <node pkg="ros_gz_sim" exec="create" args="-topic robot_description"/>
+
+    <node pkg="controller_manager" exec="spawner" output="screen"
+          args="joint_state_broadcaster --controller-manager /controller_manager --controller-manager-timeout 120"/>
+
+    <node pkg="controller_manager" exec="spawner" output="screen"
+          args="motor_position_controller --controller-manager /controller_manager --controller-manager-timeout 120"/>
+
+    <node pkg="controller_manager" exec="spawner" output="screen"
+          args="xy_position_controller --controller-manager /controller_manager --controller-manager-timeout 120"/>
+
+    <node pkg="robot_kinematics" exec="motor_to_corexy" output="screen">
+        <param from="$(find-pkg-share robot_bringup)/config/corexy_kinematics.yaml"/>
+        <param name="use_sim_time" value="true"/>
+    </node>
+
+    <node pkg="robot_kinematics" exec="distance_to_radians" />
+
+    <node pkg="rviz2" exec="rviz2" output="screen" args="-d $(var rviz_config_path)">
+        <param name="use_sim_time" value="true"/>
+    </node>
+</launch>
