@@ -54,7 +54,7 @@ class GUI:
         with dpg.font_registry():
             # Upewnij się, że ścieżka do pliku jest poprawna
             try:
-                with dpg.font("application/gui_design/fonts/Inter.ttf", 16) as self.default_font:
+                with dpg.font("application/gui_design/fonts/Roboto.ttf", 17) as self.default_font:
                     dpg.add_font_range_hint(dpg.mvFontRangeHint_Default)
                     dpg.add_font_range(0x0100, 0x017F)  # Polskie znaki
                 dpg.bind_font(self.default_font)
@@ -75,19 +75,20 @@ class GUI:
         with dpg.theme() as self.global_theme:
             with dpg.theme_component(dpg.mvAll):
                 dpg.add_theme_color(dpg.mvThemeCol_WindowBg, [54, 57, 63, 255])
-                dpg.add_theme_color(dpg.mvThemeCol_ChildBg, [47, 49, 54, 255])
+                #MENU
+                dpg.add_theme_color(dpg.mvThemeCol_ChildBg, [16, 16, 17, 255])
                 dpg.add_theme_color(dpg.mvThemeCol_Text, [255, 215, 0, 255])
                 dpg.add_theme_style(dpg.mvStyleVar_WindowPadding, 10, 10)
                 dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 5)
 
             with dpg.theme_component(dpg.mvPlot):
                 dpg.add_theme_color(dpg.mvPlotCol_PlotBg, [25, 25, 30, 255])
-                dpg.add_theme_color(dpg.mvPlotCol_PlotBorder, [47, 49, 54, 255])
+                dpg.add_theme_color(dpg.mvPlotCol_PlotBorder, [31, 35, 42, 255])
 
-        self.gray_btn_theme = self.create_btn_theme([50, 50, 50], [70, 70, 70], [30, 30, 30])
+        self.gray_btn_theme = self.create_btn_theme([54, 60, 70], [70, 70, 70], [30, 30, 30])
         self.green_btn_theme = self.create_btn_theme([50, 200, 50], [70, 255, 70], [30, 150, 30])
         self.red_btn_theme = self.create_btn_theme([200, 0, 0], [220, 0, 0], [180, 0, 0])
-        self.gold_btn_theme = self.create_btn_theme([255, 195, 10], [255, 200, 0], [255, 160, 0], [40, 40, 60])
+        self.gold_btn_theme = self.create_btn_theme([255, 190, 25], [255, 200, 0], [255, 160, 0], [40, 40, 60])
         self.transparent_btn_theme = self.create_btn_theme([0, 0, 0, 0], [255, 255, 255, 20], [255, 255, 255, 40])
 
         # --- PRZYWRÓCONE MOTYWY DLA RADIO BUTTONÓW ---
@@ -105,7 +106,7 @@ class GUI:
 
         with dpg.theme() as self.gold_text_theme:
             with dpg.theme_component(dpg.mvText):
-                dpg.add_theme_color(dpg.mvThemeCol_Text, [255, 195, 10, 255])
+                dpg.add_theme_color(dpg.mvThemeCol_Text, [255, 190, 25, 255])
 
         with dpg.theme() as self.dim_theme:
             with dpg.theme_component(dpg.mvWindowAppItem):
@@ -114,7 +115,7 @@ class GUI:
 
         with dpg.theme() as self.slider_theme:
             with dpg.theme_component(dpg.mvSliderInt):
-                dpg.add_theme_color(dpg.mvThemeCol_FrameBg, [70, 70, 70, 255])
+                dpg.add_theme_color(dpg.mvThemeCol_FrameBg, [54, 60, 70, 255])
                 dpg.add_theme_color(dpg.mvThemeCol_SliderGrab, [255, 183, 0, 255])
                 dpg.add_theme_style(dpg.mvStyleVar_GrabRounding, 12)
 
@@ -124,13 +125,13 @@ class GUI:
                 dpg.add_theme_style(dpg.mvStyleVar_WindowPadding, 0, 0)
                 dpg.add_theme_style(dpg.mvStyleVar_WindowBorderSize, 0)
                 # >>> TUTAJ ZMIENIASZ GŁÓWNY KOLOR TŁA (np. [30, 30, 30, 255]) <<<
-                dpg.add_theme_color(dpg.mvThemeCol_WindowBg, [30, 30, 35, 255])
+                dpg.add_theme_color(dpg.mvThemeCol_WindowBg, [27, 26, 33, 255])
 
                 # Motyw dla okna bocznego (Sidebar)
         with dpg.theme() as self.sidebar_theme:
             with dpg.theme_component(dpg.mvWindowAppItem):
-                # >>> TUTAJ ZMIENIASZ KOLOR MENU BOCZNEGO <<<
-                dpg.add_theme_color(dpg.mvThemeCol_WindowBg, [30, 30, 35, 255])
+                # >>> OFFSET OD MENU <<<
+                dpg.add_theme_color(dpg.mvThemeCol_WindowBg, [27, 26, 33, 255])
                 dpg.add_theme_style(dpg.mvStyleVar_WindowPadding, 0, 0)
                 dpg.add_theme_style(dpg.mvStyleVar_WindowBorderSize, 0)
 
@@ -419,7 +420,7 @@ class GUI:
                         self.nav_texts.append(txt)
                     dpg.add_spacer(height=5)
 
-                dpg.add_text(" \n" * 16)
+                dpg.add_text(" \n" * 15)
                 with dpg.group(horizontal=True):
 
                     btn_connect = dpg.add_image_button(texture_tag="tex_connect_red", width=50, height=50)
