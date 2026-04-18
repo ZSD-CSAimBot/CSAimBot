@@ -139,7 +139,7 @@ class CSAimBotGUI(QMainWindow):
 
     def connect_to_ros(self):
         try:
-            self.ros.run()
+            self.ros.run(timeout=999999)
             if self.ros.is_connected:
                 self.signals.connected.emit()
                 self.joint_sub.subscribe(self.joint_states_callback)

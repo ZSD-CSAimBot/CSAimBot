@@ -13,7 +13,7 @@ services:
     tty: true
     environment:
       - GZ_PARTITION=csaimbot
-      - DISPLAY=${DISPLAY:-:0}                 
+      - DISPLAY=${DISPLAY:-:0}
       - WAYLAND_DISPLAY=$WAYLAND_DISPLAY       
       - XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR
       - QT_X11_NO_MITSHM=1
