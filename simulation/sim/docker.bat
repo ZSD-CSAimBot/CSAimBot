@@ -1,6 +1,29 @@
 @echo off
 setlocal enabledelayedexpansion
 
+echo Sprawdzam czy Docker dziala...
+
+tasklist | findstr /i "Docker Desktop.exe" >nul
+if %errorlevel%==0 (
+    echo Docker Desktop juz uruchomiony.
+    goto docker_wait
+)
+
+echo Uruchamiam Docker Desktop...
+start "" "C:\Program Files\Docker\Docker\Docker Desktop.exe"
+
+:docker_wait
+echo Czekam na backend Dockera...
+
+:wait
+"C:\Program Files\Docker\Docker\resources\bin\docker.exe" info >nul 2>&1
+if %errorlevel% neq 0 (
+    timeout /t 2 >nul
+    goto wait
+)
+
+echo Docker gotowy.
+
 ::Pobierz literę dysku i resztę ścieżki osobno
 set "DRIVE_LETTER=%~d0"
 set "FOLDER_PATH=%~p0"
