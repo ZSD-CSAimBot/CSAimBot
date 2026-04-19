@@ -1,7 +1,10 @@
-import os
 import multiprocessing as mp
-from detection_system.yolo.export import export_model_to_trt
+import os
+
+from comms.comms import SerialCommsModule
+from comms.comms import KeyboardInputModule
 from detection_system.aimbot import vision_worker
+from detection_system.yolo.export import export_model_to_trt
 from gui_design.gui import GUI
 
 if __name__ == "__main__":
@@ -23,7 +26,10 @@ if __name__ == "__main__":
     vision_process.start()
 
     # Uruchomienie interfejsu w głównym wątku
-    app = GUI(gui_conn)
+    esp = SerialCommsModule()
+    keyboard = KeyboardInputModule()
+
+    app = GUI(gui_conn, esp, keyboard)
     app.run()
 
     # Bezpieczne zamknięcie

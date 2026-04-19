@@ -7,13 +7,16 @@ import dearpygui.dearpygui as dpg
 
 
 class GUI:
-    def __init__(self, pipe_conn):
+    def __init__(self, pipe_conn, esp_conn=None, keyboard_conn=None):
         self.pipe = pipe_conn
+        self.esp = esp_conn
+        self.keyboard = keyboard_conn
         self.running = True
         self.sidebar_expanded = False
 
-        self.is_connected = False
-        self.connection_msg = "No connection to ESP32"
+        self.is_connected = self.esp.connect()
+        self.connection_msg = "Connected to ESP32" if self.is_connected else "No connection to ESP32"
+        print(self.connection_msg)
 
         self.active_page_tag = "page_home"
         self.nav_config = {
@@ -441,10 +444,17 @@ class GUI:
                             dpg.add_spacer(width=60)
 
                             with dpg.child_window(width=470, height=220):
-                                dpg.add_text("System Logs:", color=[255, 183, 0])
-                                with dpg.group(tag="logs_group_home"):
-                                    dpg.add_text("<System> Robot Control Active", color=[255, 255, 255])
-                                dpg.bind_item_theme("logs_group_home", self.white_text_theme)
+                                dpg.add_spacer(height=10)
+                                with dpg.group(horizontal=True):
+                                    dpg.add_spacer(width=10)
+                                    with dpg.group():
+                                        dpg.add_text("System Logs:", color=[255, 183, 0])
+                                        with dpg.group(tag="logs_group_home"):
+                                            dpg.add_text("<System> Robot Control Active", color=[255, 255, 255])
+                                        dpg.bind_item_theme("logs_group_home", self.white_text_theme)
+                                        dpg.add_spacer(height=20)
+                                        dpg.add_text("Wciśnięte klawisze:", color=[255, 183, 0])
+                                        dpg.add_text("[ BRAK ]", tag="current_keys_text", color=[50, 200, 50])
 
                             dpg.add_spacer(width=33)
 
@@ -474,10 +484,14 @@ class GUI:
                                                         parent="control_plot_y")
                             dpg.add_spacer(width=20)
                             with dpg.child_window(width=480, height=300):
-                                dpg.add_text("System Logs:", color=[255, 183, 0])
-                                with dpg.group(tag="logs_group_control"):
-                                    self.add_log("<System> Robot Control Active", parent="logs_group_control")
-                                dpg.bind_item_theme("logs_group_control", self.white_text_theme)
+                                dpg.add_spacer(height=10)
+                                with dpg.group(horizontal=True):
+                                    dpg.add_spacer(width=10)
+                                    with dpg.group():
+                                        dpg.add_text("System Logs:", color=[255, 183, 0])
+                                        with dpg.group(tag="logs_group_control"):
+                                            self.add_log("<System> Robot Control Active", parent="logs_group_control")
+                                        dpg.bind_item_theme("logs_group_control", self.white_text_theme)
 
                         dpg.add_spacer(height=40)
 
@@ -789,6 +803,15 @@ class GUI:
                     else:
                         dpg.configure_item(elements["btn"], texture_tag=config["inactive_tex"])
                         dpg.bind_item_theme(elements["text"], self.white_text_theme)
+
+            if self.keyboard:
+                keys = self.keyboard.get_key()
+                # Ładne formatowanie np. z "ij" zrób "[ I J ]"
+                display_text = f"[ {keys.upper()} ]" if keys else "[ BRAK ]"
+
+                # Aktualizacja pola w interfejsie
+                if dpg.does_item_exist("current_keys_text"):
+                    dpg.set_value("current_keys_text", display_text)
 
             dpg.render_dearpygui_frame()
 
