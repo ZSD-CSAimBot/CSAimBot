@@ -4,19 +4,18 @@ import os
 import multiprocessing
 import random
 import dearpygui.dearpygui as dpg
+import time
 
 
 class GUI:
-    def __init__(self, pipe_conn, esp_conn=None, keyboard_conn=None):
-        self.pipe = pipe_conn
-        self.esp = esp_conn
-        self.keyboard = keyboard_conn
+    def __init__(self, vision_pipe, comms_pipe):
+        self.pipe = vision_pipe  # Pipe do obrazu/YOLO
+        self.comms_pipe = comms_pipe  # Pipe do modułu ESP i klawiatury
         self.running = True
         self.sidebar_expanded = False
 
-        self.is_connected = self.esp.connect()
+        self.is_connected = False
         self.connection_msg = "Connected to ESP32" if self.is_connected else "No connection to ESP32"
-        print(self.connection_msg)
 
         self.active_page_tag = "page_home"
         self.nav_config = {
@@ -643,7 +642,7 @@ class GUI:
 
                                         dpg.add_spacer(height=2)
                                         desc_txt = dpg.add_text("", tag=f"stat_desc_{c_id}", wrap=225)
-                                        dpg.bind_item_theme(desc_txt, self.gray_text_theme)
+                                        dpg.bind_item_theme(desc_txt, self.gold_text_theme)
 
                                         dpg.add_spacer(height=20)
 
@@ -776,7 +775,7 @@ class GUI:
 
     def poll_pipe(self):
         while self.running:
-            if self.pipe.poll(0.05):
+            while self.pipe.poll():
                 msg = self.pipe.recv()
                 if msg.get("type") == "coords":
                     for axis in ["x", "y", "z"]:
@@ -788,6 +787,30 @@ class GUI:
                             dpg.set_value(tag_control, val)
                         if dpg.does_item_exist(tag_home):
                             dpg.set_value(tag_home, val)
+            while self.comms_pipe.poll():
+                msg = self.comms_pipe.recv()
+
+                # Odczyt logowania do ESP
+                if msg.get("type") == "connection_status":
+                    self.is_connected = msg.get("status")
+                    self.connection_msg = "Connected to ESP32" if self.is_connected else "No connection to ESP32"
+                    print(self.connection_msg)
+                    if self.is_connected:
+                        self.add_log("<System> Connected to ESP32", color=[50, 255, 50])
+
+                # Odczyt klawiatury
+                elif msg.get("type") == "keyboard":
+                    keys = msg.get("keys")
+                    if keys:
+                        self.comms_pipe.send({"cmd": "SEND", "value": f"0,0,{keys}"})
+                    display_text = f"[ {keys.upper()} ]" if keys else "[ BRAK ]"
+                    if dpg.does_item_exist("current_keys_text"):
+                        dpg.set_value("current_keys_text", display_text)
+
+                elif msg.get("type") == "esp_msg":
+                    esp_text = msg.get("value")
+                    print(f"<ESP32> {esp_text}")
+                time.sleep(0.01)
 
     def run(self):
         dpg.set_primary_window("window_root", True)
@@ -804,19 +827,12 @@ class GUI:
                         dpg.configure_item(elements["btn"], texture_tag=config["inactive_tex"])
                         dpg.bind_item_theme(elements["text"], self.white_text_theme)
 
-            if self.keyboard:
-                keys = self.keyboard.get_key()
-                # Ładne formatowanie np. z "ij" zrób "[ I J ]"
-                display_text = f"[ {keys.upper()} ]" if keys else "[ BRAK ]"
-
-                # Aktualizacja pola w interfejsie
-                if dpg.does_item_exist("current_keys_text"):
-                    dpg.set_value("current_keys_text", display_text)
 
             dpg.render_dearpygui_frame()
 
         self.running = False
         self.pipe.send({"cmd": "QUIT"})
+        self.comms_pipe.send({"cmd": "QUIT"})
         dpg.destroy_context()
 
 

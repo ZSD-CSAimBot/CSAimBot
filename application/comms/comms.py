@@ -1,8 +1,9 @@
-import serial
-import socket
 import platform
+import socket
 import threading
+import time
 import keyboard
+import serial
 
 
 class SerialCommsModule:
@@ -24,7 +25,7 @@ class SerialCommsModule:
         try:
             self.esp = serial.Serial(port=self.port, baudrate=self.baud_rate, timeout=self.timeout)
             print(f"Connected on {self.port}.")
-            #time.sleep(2)
+            # time.sleep(2)
             return True
         except serial.SerialException as e:
             print(f"Connection error {self.port}\n{e}")
@@ -60,6 +61,48 @@ class SerialCommsModule:
             print("Port closed successfully.")
         else:
             print("Port already closed or not yet opened.")
+
+
+def comms_worker(conn):
+    esp = SerialCommsModule()
+    keyboard = KeyboardInputModule()
+    last_keys = None
+    last_send_time = None
+
+    # Próba połączenia i wysłanie statusu do GUI
+    is_connected = esp.connect()
+    conn.send({"type": "connection_status", "status": is_connected})
+
+    running = True
+    while running:
+        # 1. Odbieranie poleceń z GUI (np. komenda wysłania czegoś do ESP)
+        while conn.poll():
+            msg = conn.recv()
+            if msg.get("cmd") == "QUIT":
+                running = False
+            elif msg.get("cmd") == "SEND":
+                esp.send_command(msg.get("value"))
+        if not running:
+            break
+
+        # 2. ODCZYT Z ESP32
+        # Używamy esp.esp.in_waiting, aby sprawdzić, czy są dane bez blokowania pętli
+        if is_connected and esp.esp and esp.esp.in_waiting > 0:
+            response = esp.get_response()
+            if response:
+                # Odsyłamy wiadomość do GUI do wyświetlenia w logach
+                conn.send({"type": "esp_msg", "value": response})
+
+        # 3. Wysyłanie stanu klawiatury do GUI
+        keys = keyboard.get_key()
+        current_time = time.time()
+        if keys != last_keys or (keys and current_time - last_send_time > 0.1):
+            conn.send({"type": "keyboard", "keys": keys if keys else ""})
+            last_keys = keys
+            last_send_time = current_time
+        time.sleep(0.01)
+
+    esp.disconnect()
 
 
 class TCPCommsModule:
@@ -128,8 +171,8 @@ class TCPCommsModule:
 
 
 class TCPServer:
-    #on_received_message is a callback function that takes a message as input
-    #it has to be written in code that will use this module (or not)
+    # on_received_message is a callback function that takes a message as input
+    # it has to be written in code that will use this module (or not)
     def __init__(self, host="127.0.0.1", port=5000, on_received_message=None):
         self.host = host
         self.port = port
@@ -227,6 +270,7 @@ class KeyboardInputModule:
         except Exception as e:
             print(f"Keyboard error: {e}")
             return ""
+
 
 if __name__ == "__main__":
     print("Don't run me!")
