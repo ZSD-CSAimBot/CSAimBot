@@ -8,6 +8,9 @@ ultralytics==8.4.26
 torch==2.10.0+cu128
 torchvision==0.25.0+cu128
 tensorrt_cu12==10.15.1.29
+onnx==1.21.0
+onnxruntime-gpu==1.24.4
+onnxslim==0.1.91
 dearpygui==2.2
 numpy==2.3.5
 pyserial==3.5
