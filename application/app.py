@@ -10,7 +10,7 @@ from gui_design.gui import GUI
 if __name__ == "__main__":
     mp.freeze_support()
 
-    MODEL_PATH = os.path.abspath('application/detection_system/yolo/training/Beta_v3/weights/best.engine')
+    MODEL_PATH = os.path.abspath('application/detection_system/yolo/trained_model.engine')
     if not os.path.exists(MODEL_PATH):
         print("Trwa eksport modelu do TensorRT. Proszę czekać...")
         export_model_to_trt()

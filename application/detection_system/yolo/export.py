@@ -4,9 +4,9 @@ from ultralytics import YOLO
 
 # This script exports a YOLO model to TensorRT format for optimized inference.
 def export_model_to_trt():
-    model_path = os.path.abspath('application/detection_system/yolo/training/Beta_v3/weights/best.pt')
+    model_path = os.path.abspath('application/detection_system/yolo/trained_model.pt')
     if not os.path.exists(model_path):
-        raise FileNotFoundError("Model file not found. Please ensure 'application/detection_system/yolo/training/Beta_v3/weights/best.pt' exists.")
+        raise FileNotFoundError("Model file not found. Please ensure 'application/detection_system/yolo/trained_model.pt' exists.")
     
     model = YOLO(model_path)
     model.export(

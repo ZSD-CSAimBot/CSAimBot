@@ -10,6 +10,8 @@ torchvision==0.25.0+cu128
 tensorrt_cu12==10.15.1.29
 dearpygui==2.2
 numpy==2.3.5
+pyserial==3.5
+keyboard==0.13.5
 
 bettercam==1.0.0; sys_platform == 'win32'
 cupy-cuda12x==13.6.0; sys_platform == 'win32'
