@@ -4,6 +4,8 @@ import threading
 import time
 import keyboard
 import serial
+import sys
+import os
 
 
 class SerialCommsModule:
@@ -279,5 +281,100 @@ class KeyboardInputModule:
             return ""
 
 
+def run_benchmark():
+    esp = SerialCommsModule()
+
+    if not esp.connect():
+        print("Nie można nawiązać połączenia. Przerwanie testu.")
+        return
+
+    print("Czekam 2 sekundy na inicjalizację mikrokontrolera...")
+    time.sleep(2)
+
+    if esp.esp.in_waiting > 0:
+        esp.esp.read(esp.esp.in_waiting)
+
+    iterations = 10000
+    lost_packets = 0
+    latencies = []
+
+    print(f"\nRozpoczynam test pingu ({iterations} iteracji).")
+    print("UWAGA: Przez najbliższe kilka sekund konsola będzie wyciszona, aby nie opóźniać testu.\nCzekaj...")
+
+    # Zapisanie oryginalnego wyjścia (stdout) i przekierowanie go do "kosza", żeby printy nie psuły pingu
+    original_stdout = sys.stdout
+    sys.stdout = open(os.devnull, 'w')
+
+    for i in range(iterations):
+        # Tworzymy pakiet danych do wysłania (np. inkrementujące X i Y oraz przykładowe klawisze)
+        # Format oczekiwany przez Twój ESP: X,Y,keys\r
+        payload = f"{i},{i},ij"
+
+        # Mierzymy czas w nanosekundach dla maksymalnej precyzji
+        start_time = time.perf_counter()
+
+        esp.send_command(payload)
+        response = esp.get_response()
+
+        end_time = time.perf_counter()
+
+        # Weryfikacja: Twoje ESP powinno odesłać "Zrozumialem X: ... Y: ... Keys: ..."
+        if response is None or not response.startswith("Zrozumialem"):
+            lost_packets += 1
+        else:
+            # Obliczamy Round-Trip Time (RTT) w milisekundach
+            latency_ms = (end_time - start_time) * 1000
+            latencies.append(latency_ms)
+
+    # Przywrócenie standardowego wyświetlania w konsoli
+    sys.stdout.close()
+    sys.stdout = original_stdout
+
+    esp.disconnect()
+
+    # --- ANALIZA WYNIKÓW ---
+    if len(latencies) > 0:
+        avg_latency = sum(latencies) / len(latencies)
+        max_latency = max(latencies)
+        min_latency = min(latencies)
+    else:
+        avg_latency = max_latency = min_latency = 0
+
+    packet_loss_pct = (lost_packets / iterations) * 100
+
+    # Prędkość z komputera do ESP to w teorii połowa całkowitego czasu odpowiedzi (RTT / 2)
+    one_way_latency = avg_latency / 2
+
+    # Sprawdzenie, czy parametry zdają test
+    latency_passed = one_way_latency < 5.0
+    loss_passed = packet_loss_pct < 0.5  # Próg tolerancji dla ułamków promila (zgubienie paru na 10000 jest akceptowalne)
+
+    print("\n" + "=" * 40)
+    print("           RAPORT Z BENCHMARKU")
+    print("=" * 40)
+
+    print("\n[ Czas reakcji (Round-Trip Time) ]")
+    print(f"  • Średni czas całej pętli: {avg_latency:.2f} ms")
+    print(f"  • Najszybsza odpowiedź:    {min_latency:.2f} ms")
+    print(f"  • Najwolniejsza odpowiedź: {max_latency:.2f} ms")
+
+    print("\n[ Stabilność transmisji ]")
+    print(f"  • Ilość zgubionych ramek:  {lost_packets} z {iterations}")
+    print(f"  • Procent strat:           {packet_loss_pct:.3f}%")
+
+    print("\n" + "=" * 40)
+    print("         WERYFIKACJA WYMAGAŃ")
+    print("=" * 40)
+
+    print(f"1. Opóźnienie na linii PC -> ESP < 5 ms: ")
+    print(f"   Szacowane na podstawie średniej: {one_way_latency:.2f} ms")
+    print(f"   Status: {'ZALICZONE' if latency_passed else 'NIEZALICZONE'}")
+
+    print(f"\n2. Zgubione ramki na poziomie ~0%: ")
+    print(f"   Odnotowano: {packet_loss_pct:.3f}%")
+    print(f"   Status: {'ZALICZONE' if loss_passed else 'NIEZALICZONE'}")
+    print("=" * 40)
+
+
 if __name__ == "__main__":
-    print("Don't run me!")
+    run_benchmark()
