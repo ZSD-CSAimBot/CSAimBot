@@ -5,6 +5,7 @@ import multiprocessing
 import random
 import dearpygui.dearpygui as dpg
 import time
+import serial.tools.list_ports
 
 
 class GUI:
@@ -16,6 +17,7 @@ class GUI:
 
         self.is_connected = False
         self.connection_msg = "Connected to ESP32" if self.is_connected else "No connection to ESP32"
+        self.connection_state = "disconnected"
 
         self.active_page_tag = "page_home"
         self.nav_config = {
@@ -33,7 +35,7 @@ class GUI:
                 "nav_home": "Home Page", "nav_control": "Control Panel", "nav_stat": "Statistics",
                 "nav_settings": "Settings",
                 "start": "START", "cal": "CALIBRATE", "stop": "FORCE STOP",
-                "lang": "Language", "res": "Resolution", "status_ok": "Status: OK", "status_err": "Error: ",
+                "lang": "Language", "res": "Resolution", "port": "COM Port", "status_ok": "Status: OK","status_err": "Error: ",
                 "target": "Target Prioritization:", "logs": "System Logs:", "opencv": "Show OpenCV window",
                 "lpm": "Press LMB", "ppm": "Press RMB", "test": "Gripper Test", "set0": "Set 0",
                 "plot_data": "Data", "plot_vision": "Vision Data", "speed": "Speed",
@@ -54,7 +56,7 @@ class GUI:
                 "nav_home": "Strona Główna", "nav_control": "Panel Sterowania", "nav_stat": "Statystyki",
                 "nav_settings": "Ustawienia",
                 "start": "START", "cal": "KALIBRUJ", "stop": "WYMUŚ STOP",
-                "lang": "Język", "res": "Rozdzielczość", "status_ok": "Status: OK", "status_err": "Błąd: ",
+                "lang": "Język", "res": "Rozdzielczość", "port": "Port COM", "status_ok": "Status: OK", "status_err": "Błąd: ",
                 "target": "Priorytet Celu:", "logs": "Logi Systemowe:", "opencv": "Pokaż okno OpenCV",
                 "lpm": "Wciśnij LPM", "ppm": "Wciśnij PPM", "test": "Test Chwytaka", "set0": "Ustaw 0",
                 "plot_data": "Dane", "plot_vision": "Dane Wizyjne", "speed": "Prędkość",
@@ -256,6 +258,9 @@ class GUI:
             load_and_add("icons/connect/ikona_connect_red_full.png", "tex_conn_red_full")
             load_and_add("icons/connect/ikona_connect_green.png", "tex_conn_green")
             load_and_add("icons/connect/ikona_connect_green_full.png", "tex_conn_green_full")
+            load_and_add("icons/connect/ikona_connect_yellow.png", "tex_conn_yellow")
+            load_and_add("icons/connect/ikona_connect_yellow_full1.png", "tex_conn_yellow_full1")
+            load_and_add("icons/connect/ikona_connect_yellow_full2.png", "tex_conn_yellow_full2")
             load_and_add("icons/stats/ikona_lmb.png", "tex_stat_lmb")
             load_and_add("icons/stats/ikona_rmb.png", "tex_stat_rmb")
             load_and_add("icons/stats/ikona_time.png", "tex_stat_time")
@@ -263,6 +268,7 @@ class GUI:
             load_and_add("icons/stats/ikona_dist.png", "tex_stat_dist")
             load_and_add("icons/stats/ikona_energy.png", "tex_stat_energy")
             load_and_add("icons/stats/ikona_keys.png", "tex_stat_keys")
+
 
     def toggle_sidebar(self, sender, app_data):
         self.sidebar_expanded = not self.sidebar_expanded
@@ -340,7 +346,7 @@ class GUI:
 
         # Tłumaczenie Zwykłych Tekstów
         text_tags = [
-            ("txt_lang", "lang"), ("txt_res", "res"),
+            ("txt_lang", "lang"), ("txt_res", "res"), ("txt_port", "port"),
             ("txt_target_home", "target"), ("txt_target_control", "target"),
             ("txt_logs_home", "logs"), ("txt_logs_control", "logs")
         ]
@@ -364,6 +370,37 @@ class GUI:
         if dpg.does_item_exist("speed_text_label_control") and dpg.does_item_exist("slider_speed_control"):
             curr_speed = dpg.get_value("slider_speed_control")
             dpg.set_value("speed_text_label_control", f"{t['speed']}: {curr_speed}%")
+
+    def update_connection_display(self):
+        t = self.lang_dict[self.current_lang]
+        icon_texture = "tex_conn_red"
+        full_texture = "tex_conn_red_full"
+        text_color = [255, 80, 80]
+        display_text = f"{t['status_err']}{self.connection_msg}"
+
+        if self.connection_state == "connected":
+            icon_texture = "tex_conn_green"
+            full_texture = "tex_conn_green_full"
+            text_color = [80, 255, 80]
+            display_text = t["status_ok"]
+        elif self.connection_state == "connecting":
+            icon_texture = "tex_conn_yellow"
+            full_texture = "tex_conn_yellow_full1"
+            text_color = [255, 255, 80]
+            display_text = "Connecting..."
+        elif self.connection_state == "disconnecting":
+            icon_texture = "tex_conn_yellow"
+            full_texture = "tex_conn_yellow_full2"
+            text_color = [255, 255, 80]
+            display_text = "Disconnecting..."
+
+        if hasattr(self, "btn_connect_icon") and dpg.does_item_exist(self.btn_connect_icon):
+            dpg.configure_item(self.btn_connect_icon, texture_tag=icon_texture)
+        if hasattr(self, "btn_connect_full") and dpg.does_item_exist(self.btn_connect_full):
+            dpg.configure_item(self.btn_connect_full, texture_tag=full_texture)
+        if hasattr(self, "conn_text") and dpg.does_item_exist(self.conn_text):
+            dpg.configure_item(self.conn_text, color=text_color)
+            dpg.set_value(self.conn_text, display_text)
 
     def build_ui(self):
         dpg.bind_theme(self.global_theme)
@@ -602,7 +639,22 @@ class GUI:
                         dpg.bind_item_theme(row_res, self.settings_row_theme)
                         dpg.add_spacer(height=10)
 
-                        for _ in range(6):
+                        with dpg.child_window(width=600, height=50, no_scrollbar=True) as row_port:
+                            txt_port = dpg.add_text("COM Port", tag="txt_port", pos=[20, 13])
+                            dpg.bind_item_theme(txt_port, self.white_text_theme)
+
+                            # Pobranie dostępnych portów COM w systemie
+                            available_ports = [port.device for port in serial.tools.list_ports.comports()]
+                            if not available_ports:
+                                available_ports = ["COM3"]  # Fallback
+
+                            combo_port = dpg.add_combo(items=available_ports, default_value=available_ports[0],
+                                                       width=180, pos=[400, 13], callback=self.on_port_change)
+                            dpg.bind_item_theme(combo_port, self.gold_combo_theme)
+                        dpg.bind_item_theme(row_port, self.settings_row_theme)
+                        dpg.add_spacer(height=10)
+
+                        for _ in range(5):
                             with dpg.child_window(width=600, height=50, no_scrollbar=True) as row_empty:
                                 pass
                             dpg.bind_item_theme(row_empty, self.settings_row_theme)
@@ -718,12 +770,13 @@ class GUI:
                 tex_full = "tex_conn_green_full" if self.is_connected else "tex_conn_red_full"
 
                 with dpg.group(horizontal=True, tag="group_conn_icon", show=True):
-                    self.btn_connect_icon = dpg.add_image_button(texture_tag=tex_icon, width=50, height=50, indent=2)
+                    self.btn_connect_icon = dpg.add_image_button(texture_tag=tex_icon, width=50, height=50, indent=2,
+                                                           callback=self.on_connect_click) # Dodaj to
                     dpg.bind_item_theme(self.btn_connect_icon, self.transparent_btn_theme)
 
                 with dpg.group(horizontal=True, tag="group_conn_full", show=False):
-
-                    self.btn_connect_full = dpg.add_image_button(texture_tag=tex_full, width=220, height=50, indent=2)
+                    self.btn_connect_full = dpg.add_image_button(texture_tag=tex_full, width=220, height=50, indent=2,
+                                                           callback=self.on_connect_click) # Dodaj to
                     dpg.bind_item_theme(self.btn_connect_full, self.transparent_btn_theme)
 
     def on_speed_change_control(self, sender, app_data):
@@ -764,6 +817,21 @@ class GUI:
                 if dpg.does_item_exist(group):
                     dpg.add_text(text, parent=group, color=color)
 
+    def on_port_change(self, sender, app_data):
+        self.connection_state = "connecting"
+        self.update_connection_display()
+        self.comms_pipe.send({"cmd": "CHANGE_PORT", "value": app_data})
+
+    def on_connect_click(self, sender, app_data):
+        # Łączymy się tylko, jeśli aktualnie nie jesteśmy połączeni
+        if not self.is_connected:
+            self.connection_state = "connecting"
+            self.update_connection_display()
+            self.comms_pipe.send({"cmd": "CONNECT"})
+        else:
+            self.connection_state = "disconnecting"
+            self.update_connection_display()
+            self.comms_pipe.send({"cmd": "DISCONNECT"})
     def on_start(self, s, a):
         self.pipe.send({"cmd": "START"})
 
@@ -789,16 +857,10 @@ class GUI:
                             dpg.set_value(tag_home, val)
             while self.comms_pipe.poll():
                 msg = self.comms_pipe.recv()
-
-                # Odczyt logowania do ESP
                 if msg.get("type") == "connection_status":
-                    self.is_connected = msg.get("status")
-                    self.connection_msg = "Connected to ESP32" if self.is_connected else "No connection to ESP32"
-                    print(self.connection_msg)
-                    if self.is_connected:
-                        self.add_log("<System> Connected to ESP32", color=[50, 255, 50])
-
-                # Odczyt klawiatury
+                    self.connection_state = msg.get("status")
+                    self.is_connected = (self.connection_state == "connected")
+                    self.update_connection_display()
                 elif msg.get("type") == "keyboard":
                     keys = msg.get("keys")
                     if keys:
@@ -806,7 +868,6 @@ class GUI:
                     display_text = f"[ {keys.upper()} ]" if keys else "[ BRAK ]"
                     if dpg.does_item_exist("current_keys_text"):
                         dpg.set_value("current_keys_text", display_text)
-
                 elif msg.get("type") == "esp_msg":
                     esp_text = msg.get("value")
                     print(f"<ESP32> {esp_text}")

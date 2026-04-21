@@ -69,21 +69,30 @@ def comms_worker(conn):
     last_keys = None
     last_send_time = None
 
-    # Próba połączenia i wysłanie statusu do GUI
-    is_connected = esp.connect()
-    conn.send({"type": "connection_status", "status": is_connected})
+    is_connected = False # Ustawiamy na False na start
 
     running = True
     while running:
-        # 1. Odbieranie poleceń z GUI (np. komenda wysłania czegoś do ESP)
+        # 1. Nasłuchiwanie komend z GUI
         while conn.poll():
             msg = conn.recv()
             if msg.get("cmd") == "QUIT":
                 running = False
+            elif msg.get("cmd") == "CONNECT":
+                is_connected = esp.connect()
+                status_str = "connected" if is_connected else "disconnected"
+                conn.send({"type": "connection_status", "status": status_str})
+            elif msg.get("cmd") == "DISCONNECT":
+                esp.disconnect()
+                is_connected = False
+                conn.send({"type": "connection_status", "status": "disconnected"})
             elif msg.get("cmd") == "SEND":
                 esp.send_command(msg.get("value"))
-        if not running:
-            break
+            elif msg.get("cmd") == "CHANGE_PORT":
+                esp.disconnect()
+                is_connected = False
+                esp.port = msg.get("value")
+                conn.send({"type": "connection_status", "status": "disconnected"})
 
         # 2. ODCZYT Z ESP32
         # Używamy esp.esp.in_waiting, aby sprawdzić, czy są dane bez blokowania pętli
@@ -101,8 +110,6 @@ def comms_worker(conn):
             last_keys = keys
             last_send_time = current_time
         time.sleep(0.01)
-
-    esp.disconnect()
 
 
 class TCPCommsModule:

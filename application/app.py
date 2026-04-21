@@ -18,7 +18,6 @@ if __name__ == "__main__":
 
     gui_vision_conn, vision_worker_conn = mp.Pipe()
     gui_comms_conn, comms_worker_conn = mp.Pipe()
-
     # Uruchomienie procesu odpowiedzialnego za logikę (AimBot / Robot)
     vision_process = mp.Process(
         target=vision_worker,
@@ -33,10 +32,6 @@ if __name__ == "__main__":
         daemon=True
     )
     comms_process.start()
-
-    # Uruchomienie interfejsu w głównym wątku
-    esp = SerialCommsModule()
-    keyboard = KeyboardInputModule()
 
     app = GUI(gui_vision_conn, gui_comms_conn)
     app.run()
