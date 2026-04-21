@@ -211,5 +211,7 @@ __marimo__/
 # Additionall
 *.onnx
 *.engine
-Beta_v2_dataset/
+dataset/images/
 Beta_v3_dataset/
+Beta_v4_dataset/
+comms/.coverage
