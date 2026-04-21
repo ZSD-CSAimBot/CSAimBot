@@ -368,11 +368,11 @@ def run_benchmark():
 
     print(f"1. Opóźnienie na linii PC -> ESP < 5 ms: ")
     print(f"   Szacowane na podstawie średniej: {one_way_latency:.2f} ms")
-    print(f"   Status: {'✅ ZALICZONE' if latency_passed else '❌ NIEZALICZONE'}")
+    print(f"   Status: {'ZALICZONE' if latency_passed else 'NIEZALICZONE'}")
 
     print(f"\n2. Zgubione ramki na poziomie ~0%: ")
     print(f"   Odnotowano: {packet_loss_pct:.3f}%")
-    print(f"   Status: {'✅ ZALICZONE' if loss_passed else '❌ NIEZALICZONE'}")
+    print(f"   Status: {'ZALICZONE' if loss_passed else 'NIEZALICZONE'}")
     print("=" * 40)
 
 
