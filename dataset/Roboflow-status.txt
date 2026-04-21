@@ -1,0 +1,12 @@
+Status na 10:11 dnia 24.03.2026:
+Antoni: 3176/2067 annotated
+Łukasz: 991/2068 annotated
+
+Link do wersji BETA 2.0 Datasetu (3387zdjec, 303valid, 152test):
+https://universe.roboflow.com/ukaszs-workspace/csgo-dataset/dataset/2
+
+Link do wersji BETA 3.0 Datasetu (6000zdjec, 500valid, 250test):
+https://universe.roboflow.com/ukaszs-workspace/csgo-dataset/dataset/3
+
+Link do wersji BETA 4.0 Datasetu (10835zdjec):
+https://universe.roboflow.com/ukaszs-workspace/csgo-dataset/dataset/4
