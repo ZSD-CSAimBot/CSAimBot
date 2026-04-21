@@ -1,3 +1,5 @@
+import os
+import subprocess
 import sys
 import threading
 import roslibpy
@@ -27,6 +29,8 @@ class CSAimBotGUI(QMainWindow):
         self.waiting_for_target = False
         self.step_size = 0.01  
 
+        self.sim_process = self.run_sim()
+
         self.ros = roslibpy.Ros(host='127.0.0.1', port=9090)
         self.delta_pub = roslibpy.Topic(self.ros, '/delta_distance', 'std_msgs/Float64MultiArray')
         self.click_left_pub = roslibpy.Topic(self.ros, '/click_left', 'std_msgs/Empty')
@@ -43,6 +47,23 @@ class CSAimBotGUI(QMainWindow):
         self.signals.reached_target.connect(self.execute_auto_click)
 
         threading.Thread(target=self.connect_to_ros, daemon=True).start()
+
+    def run_sim(self):
+        path = os.path.abspath("simulation/sim/docker.bat")
+        command = f'cmd.exe /c ""{path}" & pause"'
+        sim_process = subprocess.Popen(
+            command, 
+            creationflags=subprocess.CREATE_NEW_CONSOLE
+        )
+        return sim_process
+    
+    def stop_sim(self):
+        if self.sim_process:
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(self.sim_process.pid)],
+                creationflags=subprocess.CREATE_NO_WINDOW
+            )
+            print("Zamknięto okno symulacji.")
 
     def build_ui(self):
         central_widget = QWidget()
@@ -245,6 +266,7 @@ class CSAimBotGUI(QMainWindow):
         super().keyPressEvent(event)
 
     def closeEvent(self, event):
+        self.stop_sim()
         if self.ros.is_connected:
             self.ros.terminate()
         event.accept()
