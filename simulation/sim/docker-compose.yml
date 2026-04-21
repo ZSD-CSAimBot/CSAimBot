@@ -1,0 +1,29 @@
+services:
+  sim:
+    build: .
+    container_name: csaimbot_sim
+    working_dir: /sim_ws
+    volumes:
+      - ./:/sim_ws
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - /mnt/wslg:/mnt/wslg                    
+    ports:
+      - "9090:9090"
+    stdin_open: true
+    tty: true
+    environment:
+      - GZ_PARTITION=csaimbot
+      - DISPLAY=${DISPLAY:-:0}
+      - WAYLAND_DISPLAY=$WAYLAND_DISPLAY       
+      - XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR
+      - QT_X11_NO_MITSHM=1
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    command: /bin/bash /sim_ws/start_sim.sh

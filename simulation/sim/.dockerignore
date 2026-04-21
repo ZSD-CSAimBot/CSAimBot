@@ -1,0 +1,10 @@
+build
+install
+log
+.vscode
+__pycache__
+*.pyc
+*.pyo
+*.swp
+*.tmp
+.DS_Store
