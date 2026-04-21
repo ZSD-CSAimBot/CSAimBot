@@ -1,8 +1,6 @@
 import multiprocessing as mp
 import os
 
-from comms.comms import SerialCommsModule
-from comms.comms import KeyboardInputModule
 from comms.comms import comms_worker
 from detection_system.aimbot import vision_worker
 from detection_system.yolo.export import export_model_to_trt
