@@ -119,32 +119,56 @@ class CSAimBotGUI(QMainWindow):
         self.setStyleSheet(style_sheet)
 
     def run_sim(self):
-        path = os.path.abspath("simulation/sim/run_sim.bat")
-        command = f'cmd.exe /c ""{path}" & pause"'
-        sim_process = subprocess.Popen(
-            command, 
-            creationflags=subprocess.CREATE_NEW_CONSOLE
-        )
+
+        if sys.platform == "win32":
+            path = os.path.abspath("simulation/sim/run_sim.bat")
+            command = f'cmd.exe /c ""{path}" & pause"'
+            sim_process = subprocess.Popen(
+                command, 
+                creationflags=subprocess.CREATE_NEW_CONSOLE)
+            
+        elif sys.platform == "linux":
+            path = os.path.abspath("simulation/sim/run_sim.sh")
+            
+            sim_process = subprocess.Popen(
+                ["bash", path],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+        else:
+            sim_process = None
+
         return sim_process
     
     def stop_sim(self):
         print("Shutting down docker container(csaimbot_sim)...")
         try:
-            subprocess.run(
+            if sys == "win32":
+                subprocess.run(
                 ["wsl", "-d", "Ubuntu", "-e", "docker", "stop", "csaimbot_sim"],
                 creationflags=subprocess.CREATE_NO_WINDOW,
                 timeout=15
-            )
+                )
+
+            elif sys.platform == "linux":
+                subprocess.run(
+                    ["sudo", "docker", "stop", "csaimbot_sim"],
+                    timeout=15
+                )
             print("Container succesfully closed.")
         except Exception as e:
             print(f"Error during shutting down docker container: {e}")
 
         if self.sim_process:
             try:
-                subprocess.run(
-                    ["taskkill", "/F", "/T", "/PID", str(self.sim_process.pid)],
-                    creationflags=subprocess.CREATE_NO_WINDOW
-                )
+                if sys.platform == "win32":
+                    subprocess.run(
+                        ["taskkill", "/F", "/T", "/PID", str(self.sim_process.pid)],
+                        creationflags=subprocess.CREATE_NO_WINDOW
+                    )
+
+                elif sys.platform == "linux":
+                    self.sim_process.terminate()
                 print("Sim windows has closed.")
             except Exception as e:
                 pass
