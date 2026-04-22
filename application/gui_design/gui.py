@@ -9,9 +9,11 @@ import serial.tools.list_ports
 
 
 class GUI:
-    def __init__(self, vision_pipe, comms_pipe):
+    def __init__(self, vision_pipe, comms_pipe, sim_pipe):
         self.pipe = vision_pipe  # Pipe do obrazu/YOLO
         self.comms_pipe = comms_pipe  # Pipe do modułu ESP i klawiatury
+        self.sim_pipe = sim_pipe
+        self.simulation_state = "stopped"
         self.running = True
         self.sidebar_expanded = False
 
@@ -86,7 +88,9 @@ class GUI:
         self.listener_thread = threading.Thread(target=self.poll_pipe, daemon=True)
         self.listener_thread.start()
 
+        self.sim_pipe.send({"cmd": "STATUS"})
         self.on_language_change(None, "English")
+        self.update_simulation_display()
 
     def switch_page(self, sender, app_data, user_data):
         pages = ["page_home", "page_control", "page_stat", "page_settings"]
@@ -402,6 +406,28 @@ class GUI:
             dpg.configure_item(self.conn_text, color=text_color)
             dpg.set_value(self.conn_text, display_text)
 
+    def add_sim_controls(self, suffix):
+        with dpg.group(horizontal=True):
+            dpg.add_spacer(width=14)
+            btn_start_sim = dpg.add_button(
+                label="START SIM",
+                width=105,
+                height=35,
+                tag=f"btn_start_sim_{suffix}",
+                callback=self.on_start_sim
+            )
+            dpg.add_spacer(width=10)
+            btn_stop_sim = dpg.add_button(
+                label="STOP SIM",
+                width=105,
+                height=35,
+                tag=f"btn_stop_sim_{suffix}",
+                callback=self.on_stop_sim
+            )
+
+        dpg.bind_item_theme(btn_start_sim, self.green_btn_theme)
+        dpg.bind_item_theme(btn_stop_sim, self.red_btn_theme)
+
     def build_ui(self):
         dpg.bind_theme(self.global_theme)
         with dpg.window(tag="window_root", width=self.width, height=self.height, no_title_bar=True, no_resize=True,
@@ -494,17 +520,21 @@ class GUI:
 
                             dpg.add_spacer(width=33)
 
-                            with dpg.child_window(width=280, height=220):
-                                dpg.add_spacer(height=20)
-                                axes = ["X", "Y", "Z"]
-                                for axis in axes:
-                                    with dpg.group(horizontal=True):
-                                        dpg.add_spacer(width=40)
-                                        axis_label = dpg.add_text(f"{axis}: ")
-                                        dpg.bind_item_theme(axis_label, self.white_text_theme)
-                                        axis_value = dpg.add_text("0.00", tag=f"coord_{axis.lower()}_home")
-                                        dpg.bind_item_theme(axis_value, self.white_text_theme)
-                                    dpg.add_spacer(height=30)
+                            with dpg.group():
+                                with dpg.child_window(width=280, height=165):
+                                    dpg.add_spacer(height=16)
+                                    axes = ["X", "Y", "Z"]
+                                    for axis in axes:
+                                        with dpg.group(horizontal=True):
+                                            dpg.add_spacer(width=40)
+                                            axis_label = dpg.add_text(f"{axis}: ")
+                                            dpg.bind_item_theme(axis_label, self.white_text_theme)
+                                            axis_value = dpg.add_text("0.00", tag=f"coord_{axis.lower()}_home")
+                                            dpg.bind_item_theme(axis_value, self.white_text_theme)
+                                        dpg.add_spacer(height=18)
+
+                                dpg.add_spacer(height=10)
+                                self.add_sim_controls("home")
 
             with dpg.group(tag="page_control", show=False):
                 dpg.add_spacer(height=30)
@@ -604,17 +634,21 @@ class GUI:
 
                             dpg.add_spacer(width=40)
 
-                            with dpg.child_window(width=280, height=220):
-                                dpg.add_spacer(height=20)
-                                axes    = ["X", "Y", "Z"]
-                                for axis in axes:
-                                    with dpg.group(horizontal=True):
-                                        dpg.add_spacer(width=40)
-                                        axis_label = dpg.add_text(f"{axis}: ")
-                                        dpg.bind_item_theme(axis_label, self.white_text_theme)
-                                        axis_value = dpg.add_text("0.00", tag=f"coord_{axis.lower()}_control")
-                                        dpg.bind_item_theme(axis_value, self.white_text_theme)
-                                    dpg.add_spacer(height=30)
+                            with dpg.group():
+                                with dpg.child_window(width=280, height=165):
+                                    dpg.add_spacer(height=16)
+                                    axes    = ["X", "Y", "Z"]
+                                    for axis in axes:
+                                        with dpg.group(horizontal=True):
+                                            dpg.add_spacer(width=40)
+                                            axis_label = dpg.add_text(f"{axis}: ")
+                                            dpg.bind_item_theme(axis_label, self.white_text_theme)
+                                            axis_value = dpg.add_text("0.00", tag=f"coord_{axis.lower()}_control")
+                                            dpg.bind_item_theme(axis_value, self.white_text_theme)
+                                        dpg.add_spacer(height=18)
+
+                                dpg.add_spacer(height=10)
+                                self.add_sim_controls("control")
 
             with dpg.group(tag="page_settings", show=False):
                 dpg.add_spacer(height=60)
@@ -841,6 +875,29 @@ class GUI:
     def on_calibrate(self, s, a):
         self.pipe.send({"cmd": "CALIBRATE"})
 
+    def on_start_sim(self, sender, app_data):
+        self.simulation_state = "starting"
+        self.sim_pipe.send({"cmd": "START"})
+        self.update_simulation_display()
+
+    def on_stop_sim(self, sender, app_data):
+        self.simulation_state = "stopping"
+        self.sim_pipe.send({"cmd": "STOP"})
+        self.update_simulation_display()
+
+    def update_simulation_display(self):
+        is_running = self.simulation_state == "running"
+        is_pending = self.simulation_state in ("starting", "stopping")
+
+        for suffix in ["home", "control"]:
+            start_tag = f"btn_start_sim_{suffix}"
+            stop_tag = f"btn_stop_sim_{suffix}"
+
+            if dpg.does_item_exist(start_tag):
+                dpg.configure_item(start_tag, enabled=not is_running and not is_pending)
+            if dpg.does_item_exist(stop_tag):
+                dpg.configure_item(stop_tag, enabled=is_running and not is_pending)
+
     def poll_pipe(self):
         while self.running:
             while self.pipe.poll():
@@ -871,13 +928,25 @@ class GUI:
                 elif msg.get("type") == "esp_msg":
                     esp_text = msg.get("value")
                     print(f"<ESP32> {esp_text}")
-                time.sleep(0.01)
+            while self.sim_pipe.poll():
+                msg = self.sim_pipe.recv()
+                if msg.get("type") == "simulation_status":
+                    self.simulation_state = msg.get("status", "stopped")
+                    message = msg.get("message")
+                    if message:
+                        color = [80, 255, 80] if self.simulation_state == "running" else [255, 255, 80]
+                        if "error" in message.lower() or "not found" in message.lower():
+                            color = [255, 80, 80]
+                        self.add_log(message, color)
+                    self.update_simulation_display()
+            time.sleep(0.01)
 
     def run(self):
         dpg.set_primary_window("window_root", True)
         dpg.show_viewport()
 
         while dpg.is_dearpygui_running():
+            self.update_simulation_display()
             for page_tag, elements in self.nav_elements.items():
                 config = self.nav_config.get(page_tag)
                 if dpg.does_item_exist(elements["btn"]) and dpg.does_item_exist(elements["text"]):
@@ -894,6 +963,7 @@ class GUI:
         self.running = False
         self.pipe.send({"cmd": "QUIT"})
         self.comms_pipe.send({"cmd": "QUIT"})
+        self.sim_pipe.send({"cmd": "QUIT"})
         dpg.destroy_context()
 
 
@@ -901,5 +971,7 @@ if __name__ == "__main__":
     import multiprocessing
 
     parent_pipe, child_pipe = multiprocessing.Pipe()
-    app_instance = GUI(child_pipe)
+    parent_comms_pipe, child_comms_pipe = multiprocessing.Pipe()
+    parent_sim_pipe, child_sim_pipe = multiprocessing.Pipe()
+    app_instance = GUI(child_pipe, child_comms_pipe, child_sim_pipe)
     app_instance.run()

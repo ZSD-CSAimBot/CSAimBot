@@ -8,6 +8,121 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QGridLayout, QGroupBox)
 from PyQt6.QtCore import pyqtSignal, QObject, Qt
 
+
+def _repo_root():
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+
+
+def _is_process_running(process):
+    return process is not None and process.poll() is None
+
+
+def _send_sim_status(pipe, process, message=None):
+    payload = {
+        "type": "simulation_status",
+        "status": "running" if _is_process_running(process) else "stopped"
+    }
+    if message:
+        payload["message"] = message
+    pipe.send(payload)
+
+
+def _pythonw_executable():
+    if sys.platform != "win32":
+        return sys.executable
+
+    pythonw_path = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
+    return pythonw_path if os.path.exists(pythonw_path) else sys.executable
+
+
+def _stop_sim_container():
+    try:
+        if sys.platform == "win32":
+            subprocess.run(
+                ["wsl", "-d", "Ubuntu", "-e", "docker", "stop", "csaimbot_sim"],
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                timeout=15
+            )
+        elif sys.platform == "linux":
+            subprocess.run(
+                ["sudo", "docker", "stop", "csaimbot_sim"],
+                timeout=15
+            )
+        return True
+    except Exception:
+        return False
+
+
+def _start_sim_gui_process(pipe, process):
+    if _is_process_running(process):
+        _send_sim_status(pipe, process, "Simulation is already running.")
+        return process
+
+    creationflags = 0
+    if sys.platform == "win32":
+        creationflags = subprocess.CREATE_NO_WINDOW
+
+    process = subprocess.Popen(
+        [_pythonw_executable(), os.path.abspath(__file__)],
+        cwd=_repo_root(),
+        creationflags=creationflags
+    )
+    _send_sim_status(pipe, process, "Simulation started.")
+    return process
+
+
+def _stop_sim_gui_process(pipe, process):
+    if not _is_process_running(process):
+        _send_sim_status(pipe, None, "Simulation is not running.")
+        return None
+
+    try:
+        _stop_sim_container()
+        if sys.platform == "win32":
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(process.pid)],
+                creationflags=subprocess.CREATE_NO_WINDOW
+            )
+        else:
+            process.terminate()
+    finally:
+        _send_sim_status(pipe, None, "Simulation stopped.")
+
+    return None
+
+
+def simulation_worker(pipe):
+    process = None
+    last_status = None
+    running = True
+    _send_sim_status(pipe, process)
+
+    while running:
+        while pipe.poll():
+            msg = pipe.recv()
+            cmd = msg.get("cmd")
+
+            if cmd == "START":
+                process = _start_sim_gui_process(pipe, process)
+            elif cmd == "STOP":
+                process = _stop_sim_gui_process(pipe, process)
+            elif cmd == "STATUS":
+                _send_sim_status(pipe, process)
+            elif cmd == "QUIT":
+                running = False
+                break
+
+        current_status = "running" if _is_process_running(process) else "stopped"
+        if current_status != last_status:
+            _send_sim_status(pipe, process)
+            last_status = current_status
+
+        threading.Event().wait(0.05)
+
+    if _is_process_running(process):
+        _stop_sim_gui_process(pipe, process)
+
+
 class RosSignals(QObject):
     connected = pyqtSignal()
     error = pyqtSignal(str)
@@ -28,6 +143,7 @@ class CSAimBotGUI(QMainWindow):
         self.target_y = 0.0
         self.waiting_for_target = False
         self.step_size = 0.01  
+        self.sim_log_file = None
 
         self.sim_process = self.run_sim()
 
@@ -122,10 +238,23 @@ class CSAimBotGUI(QMainWindow):
 
         if sys.platform == "win32":
             path = os.path.abspath("simulation/sim/run_sim.bat")
-            command = f'cmd.exe /c ""{path}" & pause"'
+            log_path = os.path.abspath("simulation/docker_logs/docker.log")
+            os.makedirs(os.path.dirname(log_path), exist_ok=True)
+
+            self.sim_log_file = open(log_path, "a", encoding="utf-8", errors="replace", buffering=1)
+            self.sim_log_file.write("\n\nCSAimBot Docker simulation start\n")
+            self.sim_log_file.flush()
+
+            env = os.environ.copy()
+            env["CSAIMBOT_NO_PAUSE"] = "1"
+
             sim_process = subprocess.Popen(
-                command, 
-                creationflags=subprocess.CREATE_NEW_CONSOLE)
+                ["cmd.exe", "/c", path],
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                stdout=self.sim_log_file,
+                stderr=subprocess.STDOUT,
+                env=env
+            )
             
         elif sys.platform == "linux":
             path = os.path.abspath("simulation/sim/run_sim.sh")
@@ -143,18 +272,7 @@ class CSAimBotGUI(QMainWindow):
     def stop_sim(self):
         print("Shutting down docker container(csaimbot_sim)...")
         try:
-            if sys == "win32":
-                subprocess.run(
-                ["wsl", "-d", "Ubuntu", "-e", "docker", "stop", "csaimbot_sim"],
-                creationflags=subprocess.CREATE_NO_WINDOW,
-                timeout=15
-                )
-
-            elif sys.platform == "linux":
-                subprocess.run(
-                    ["sudo", "docker", "stop", "csaimbot_sim"],
-                    timeout=15
-                )
+            _stop_sim_container()
             print("Container succesfully closed.")
         except Exception as e:
             print(f"Error during shutting down docker container: {e}")
@@ -172,6 +290,11 @@ class CSAimBotGUI(QMainWindow):
                 print("Sim windows has closed.")
             except Exception as e:
                 pass
+
+        if self.sim_log_file:
+            self.sim_log_file.write("CSAimBot Docker simulation stop\n")
+            self.sim_log_file.close()
+            self.sim_log_file = None
 
     def build_ui(self):
         central_widget = QWidget()

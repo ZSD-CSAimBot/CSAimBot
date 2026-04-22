@@ -11,6 +11,7 @@ __pycache__/
 build/
 install/
 log/
+docker_logs/
 develop-eggs/
 dist/
 downloads/
