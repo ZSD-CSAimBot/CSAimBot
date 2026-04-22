@@ -236,14 +236,15 @@ class CSAimBotGUI(QMainWindow):
 
     def run_sim(self):
 
+        log_path = os.path.abspath("simulation/docker_logs/docker.log")
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+
+        self.sim_log_file = open(log_path, "a", encoding="utf-8", errors="replace", buffering=1)
+        self.sim_log_file.write("\n\nCSAimBot Docker simulation start\n")
+        self.sim_log_file.flush()
+
         if sys.platform == "win32":
             path = os.path.abspath("simulation/sim/run_sim.bat")
-            log_path = os.path.abspath("simulation/docker_logs/docker.log")
-            os.makedirs(os.path.dirname(log_path), exist_ok=True)
-
-            self.sim_log_file = open(log_path, "a", encoding="utf-8", errors="replace", buffering=1)
-            self.sim_log_file.write("\n\nCSAimBot Docker simulation start\n")
-            self.sim_log_file.flush()
 
             env = os.environ.copy()
             env["CSAIMBOT_NO_PAUSE"] = "1"
@@ -261,7 +262,7 @@ class CSAimBotGUI(QMainWindow):
             
             sim_process = subprocess.Popen(
                 ["bash", path],
-                stdout=subprocess.DEVNULL,
+                stdout=self.sim_log_file,
                 stderr=subprocess.DEVNULL
             )
         else:
