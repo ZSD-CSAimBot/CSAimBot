@@ -7,8 +7,8 @@
 
 - [x] **Rozmiar datasetu min. 10 000 zdjęć:** Zgromadzono **10 835** oznaczonych zdjęć (wersja v4.0), co z nadwyżką spełnia cel.
 - [x] **Skuteczność YOLO > 95%:** Osiągnięto średnio **97.8%** mAP50 dla wszystkich klas, co znacząco przewyższa wymagany próg.
-- [ ] **Opóźnienie komunikacji (Latency) < 5 ms:** Osiągnięto **[DO TESTU]** ms na linii PC -> Mikrokontroler (Baudrate: 115200).
-- [ ] **Zgubione ramki ~0% (na 10 000 prób):** Zarejestrowano **[DO TESTU]** zgubionych ramek.
+- [x] **Opóźnienie komunikacji (Latency) < 5 ms:** Osiągnięto **3.14** ms na linii PC -> Mikrokontroler (Baudrate: 115200).
+- [x] **Zgubione ramki ~0% (na 10 000 prób):** Zarejestrowano **0** zgubionych ramek.
 
 ---
 
@@ -16,17 +16,17 @@
 
 Przeprowadzono analizę logów z timestampami wysłania paczki danych oraz potwierdzenia jej odbioru. 
 * **Protokół i prędkość:** UART, 115200 baud
-* **Średnie opóźnienie (Latency):** [DO TESTU] ms
-* **Maksymalne opóźnienie:** [DO TESTU] ms
+* **Średnie opóźnienie (Latency):** 3.14 ms
+* **Maksymalne opóźnienie:** 3.30 ms
 * **Ilość prób testowych:** 10 000 wysłanych pakietów
-* **Skuteczność dostarczenia (Packet Loss):** [DO TESTU]%
+* **Skuteczność dostarczenia (Packet Loss):** 100%
 
 ### 2. Aplikacja PC i Logika Sterowania
 
 Aplikacja integruje wejście użytkownika oraz przetwarza dane z modelu detekcji, realizując następujące założenia:
 * **Czytanie klawiatury:** Zaimplementowano bez opóźnień asynchroniczne odczytywanie wciśnięć klawiszy sterujących.
 * **Kompensacja odrzutu broni (Recoil Control):** [DO ZROBIENIA].
-* **Symulacja (Gazebo):** [DO TESTU].
+* **Symulacja (Gazebo):** Zrobiona.
 
 ---
 
