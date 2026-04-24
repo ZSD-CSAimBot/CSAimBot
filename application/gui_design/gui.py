@@ -6,6 +6,7 @@ import random
 import dearpygui.dearpygui as dpg
 import time
 import serial.tools.list_ports
+from utils.json_utils import StatsManager
 
 
 class GUI:
@@ -14,6 +15,8 @@ class GUI:
         self.comms_pipe = comms_pipe  # Pipe do modułu ESP i klawiatury
         self.running = True
         self.sidebar_expanded = False
+        self.stats_manager = StatsManager()
+        self._last_stats_refresh = 0
 
         self.is_connected = False
         self.connection_msg = "Connected to ESP32" if self.is_connected else "No connection to ESP32"
@@ -698,9 +701,10 @@ class GUI:
 
                                         dpg.add_spacer(height=20)
 
-                                        val = random.randint(1000, 999999)
-                                        val_btn = dpg.add_button(label=str(val), width=225, height=45,
-                                                                 tag=f"stat_val_{c_id}")
+                                        val_btn = dpg.add_button(
+                                            label=StatsManager.format_value(c_id, self.stats_manager.get(c_id)),
+                                            width=225, height=45,
+                                            tag=f"stat_val_{c_id}")
                                         dpg.bind_item_theme(val_btn, self.stat_value_theme)
 
                                     dpg.bind_item_theme(card_win, self.stat_card_theme)
@@ -817,6 +821,13 @@ class GUI:
                 if dpg.does_item_exist(group):
                     dpg.add_text(text, parent=group, color=color)
 
+    def refresh_stats_display(self):
+        self.stats_manager.reload()
+        for key in StatsManager.DEFAULTS:
+            tag = f"stat_val_{key}"
+            if dpg.does_item_exist(tag):
+                dpg.configure_item(tag, label=StatsManager.format_value(key, self.stats_manager.get(key)))
+
     def on_port_change(self, sender, app_data):
         self.connection_state = "connecting"
         self.update_connection_display()
@@ -871,7 +882,27 @@ class GUI:
                 elif msg.get("type") == "esp_msg":
                     esp_text = msg.get("value")
                     print(f"<ESP32> {esp_text}")
+                elif msg.get("type") == "stat_update":
+                    key, value = msg.get("key"), msg.get("value")
+                    if key and value is not None:
+                        self.stats_manager.set(key, value)
+                        tag = f"stat_val_{key}"
+                        if dpg.does_item_exist(tag):
+                            dpg.configure_item(tag, label=StatsManager.format_value(key, value))
+                elif msg.get("type") == "stat_increment":
+                    key = msg.get("key")
+                    amount = msg.get("amount", 1)
+                    if key:
+                        self.stats_manager.increment(key, amount)
+                        tag = f"stat_val_{key}"
+                        if dpg.does_item_exist(tag):
+                            dpg.configure_item(tag, label=StatsManager.format_value(key, self.stats_manager.get(key)))
                 time.sleep(0.01)
+
+            now = time.time()
+            if now - self._last_stats_refresh >= 5:
+                self._last_stats_refresh = now
+                self.refresh_stats_display()
 
     def run(self):
         dpg.set_primary_window("window_root", True)
