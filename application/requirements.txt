@@ -14,8 +14,9 @@ onnxslim==0.1.91
 dearpygui==2.2
 numpy==2.3.5
 pyserial==3.5
-keyboard==0.13.5
+keyboard==0.13.5 #not needed for Mac/Linux but might be good for windows
 pytest==9.0.3
+pynput==1.7.6
 
 bettercam==1.0.0; sys_platform == 'win32'
 cupy-cuda12x==13.6.0; sys_platform == 'win32'
