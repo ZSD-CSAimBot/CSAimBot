@@ -15,6 +15,8 @@ dearpygui==2.2
 numpy==2.3.5
 pyserial==3.5
 keyboard==0.13.5
+roslibpy==2.0.0
+PyQt6==6.11.0
 pytest==9.0.3
 
 bettercam==1.0.0; sys_platform == 'win32'

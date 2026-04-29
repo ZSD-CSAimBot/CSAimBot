@@ -38,6 +38,9 @@ class AimBot:
         self.show_debug_window = True
         self.model_tensor = torch.empty((1, 3, self.FOV_HEIGHT, self.FOV_WIDTH), dtype=torch.float16, device="cuda")
         self.best_target_position = (0.0, 0.0)
+        self.shoot_threshold = 2
+        self.recoil_strength = 5
+        self.recoil_control = False
         self.head_class_id = [1, 7]
         self.body_class_id = [0, 6]
 
@@ -53,9 +56,15 @@ class AimBot:
             return True
         return False
 
+    def recoil_compensation(self, offset_x, offset_y):
+        if self.recoil_control:
+            if abs(offset_x) < self.shoot_threshold and abs(offset_y) < self.shoot_threshold:
+                offset_y += self.recoil_strength
+        return offset_x, offset_y
+    
     def calculate_best_target_position(self, boxes_data_tensor):
         """
-        Calculates the best target position on the GPU.
+        Calculates the best target position on the GPU. Returns the offset from the center of the FOV to the best target.
         """
         if boxes_data_tensor is None or boxes_data_tensor.shape[0] == 0:
             return None, None
@@ -76,7 +85,8 @@ class AimBot:
 
         offset_x = int(round(offsets_x[best_idx].item()))
         offset_y = int(round(offsets_y[best_idx].item()))
-        return offset_x, offset_y
+
+        return self.recoil_compensation(offset_x, offset_y)
 
     def display_results(self, boxes_data):
         if self.debug_frame is not None:
