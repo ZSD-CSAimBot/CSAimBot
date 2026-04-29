@@ -6,6 +6,10 @@ import random
 import dearpygui.dearpygui as dpg
 import time
 import serial.tools.list_ports
+""" !!!! WAŻNE 
+X jest krańcówką PRZY silniku  
+Y jest osią szyny wózka z chwytakiem
+"""
 from utils.json_utils import StatsManager
 
 
@@ -21,6 +25,11 @@ class GUI:
         self.is_connected = False
         self.connection_msg = "Connected to ESP32" if self.is_connected else "No connection to ESP32"
         self.connection_state = "disconnected"
+
+        self.pos_x = 0
+        self.pos_y = 0
+        self.pos_z = 0
+        self.current_speed = 75
 
         self.active_page_tag = "page_home"
         self.nav_config = {
@@ -575,19 +584,31 @@ class GUI:
                                 actions = [("Wciśnij LPM", "lpm"), ("Wciśnij PPM", "ppm"), ("Test Chwytaka", "test")]
                                 for action_label, action_key in actions:
                                     with dpg.group(horizontal=True):
-                                        btn_action = dpg.add_button(label=action_label, width=200, height=45, tag=f"btn_{action_key}_control")
+                                        btn_action = dpg.add_button(label=action_label, width=200, height=45,
+                                                                    tag=f"btn_{action_key}_control")
                                         dpg.bind_item_theme(btn_action, self.gold_btn_theme)
 
                                         dpg.add_spacer(width=5)
-                                        btn_left = dpg.add_button(label="<", width=70, height=45)
+                                        # Przykładowy fragment w build_ui:
+                                        btn_left = dpg.add_button(label="<", width=70, height=45,
+                                                                  callback=self.on_step_adjust,
+                                                                  user_data=(action_key, -1),
+                                                                  tag=f"btn_left_{action_key}")
+
+                                        # ... analogicznie dla ppm i test ...
                                         dpg.bind_item_theme(btn_left, self.gold_btn_theme)
 
                                         dpg.add_spacer(width=5)
-                                        btn_right = dpg.add_button(label=">", width=70, height=45)
+                                        btn_right = dpg.add_button(label=">", width=70, height=45,
+                                                                   callback=self.on_step_adjust,
+                                                                   user_data=(action_key, 1),
+                                                                   tag=f"btn_right_{action_key}")
                                         dpg.bind_item_theme(btn_right, self.gold_btn_theme)
 
                                         dpg.add_spacer(width=5)
-                                        btn_set_zero = dpg.add_button(label="Set 0", width=80, height=45, tag=f"btn_set0_{action_key}")
+                                        btn_set_zero = dpg.add_button(label="Set 0", width=80, height=45,
+                                                                      tag=f"btn_set0_{action_key}",
+                                                                      callback=self.on_set_zero, user_data=action_key)
                                         dpg.bind_item_theme(btn_set_zero, self.gray_btn_theme)
 
                                     dpg.add_spacer(height=10)
@@ -784,6 +805,7 @@ class GUI:
                     dpg.bind_item_theme(self.btn_connect_full, self.transparent_btn_theme)
 
     def on_speed_change_control(self, sender, app_data):
+        self.current_speed = int(app_data) # DODANE: Zapisz aktualną wartość slidera
         t = self.lang_dict[self.current_lang]
         dpg.set_value("speed_text_label_control", f"{t['speed']}: {app_data}%")
 
@@ -843,11 +865,54 @@ class GUI:
             self.connection_state = "disconnecting"
             self.update_connection_display()
             self.comms_pipe.send({"cmd": "DISCONNECT"})
+
+    def on_step_adjust(self, sender, app_data, user_data):
+        action_key, direction = user_data
+        step = 10 * direction
+        simulated_key = ""
+
+        if action_key == "lpm":
+            self.pos_x += step
+            simulated_key = "l" if direction > 0 else "j"
+        elif action_key == "ppm":
+            self.pos_y += step
+            simulated_key = "i" if direction > 0 else "k"
+        elif action_key == "test":
+            self.pos_z += step
+            simulated_key = "z"
+
+        self._update_coords_display()
+
+        if self.is_connected:
+            self.comms_pipe.send({"cmd": "SEND", "value": f"{self.pos_x},{self.pos_y},{self.current_speed},{simulated_key}"})
+
+    def on_set_zero(self, sender, app_data, user_data):
+        if user_data == "lpm": self.pos_x = 0
+        elif user_data == "ppm": self.pos_y = 0
+        elif user_data == "test": self.pos_z = 0
+
+        self._update_coords_display()
+
+        if self.is_connected:
+            self.comms_pipe.send({"cmd": "SEND", "value": f"{self.pos_x},{self.pos_y},{self.current_speed},"})
+
+    def _update_coords_display(self):
+        # Aktualizacja wizualna w interfejsie na obu podstronach (Home i Control Panel)
+        for tag_x in ["coord_x_control", "coord_x_home"]:
+            if dpg.does_item_exist(tag_x): dpg.set_value(tag_x, str(self.pos_x))
+        for tag_y in ["coord_y_control", "coord_y_home"]:
+            if dpg.does_item_exist(tag_y): dpg.set_value(tag_y, str(self.pos_y))
+        for tag_z in ["coord_z_control", "coord_z_home"]:
+            if dpg.does_item_exist(tag_z): dpg.set_value(tag_z, str(self.pos_z))
+
     def on_start(self, s, a):
         self.pipe.send({"cmd": "START"})
 
     def on_stop(self, s, a):
         self.pipe.send({"cmd": "STOP"})
+        if self.is_connected:
+            self.comms_pipe.send({"cmd": "SEND", "value": f"{self.pos_x},{self.pos_y},{self.current_speed},p"})
+            self.add_log("<System> EMERGENCY STOP ACTIVATED", color=[255, 0, 0])
 
     def on_calibrate(self, s, a):
         self.pipe.send({"cmd": "CALIBRATE"})
@@ -874,8 +939,10 @@ class GUI:
                     self.update_connection_display()
                 elif msg.get("type") == "keyboard":
                     keys = msg.get("keys")
-                    if keys:
-                        self.comms_pipe.send({"cmd": "SEND", "value": f"0,0,{keys}"})
+                    # Teraz paczka z prędkością idzie ZAWSZE, nawet jak keys jest puste (puszczenie przycisku)
+                    self.comms_pipe.send(
+                        {"cmd": "SEND", "value": f"{self.pos_x},{self.pos_y},{self.current_speed},{keys}"})
+
                     display_text = f"[ {keys.upper()} ]" if keys else "[ BRAK ]"
                     if dpg.does_item_exist("current_keys_text"):
                         dpg.set_value("current_keys_text", display_text)
@@ -908,17 +975,49 @@ class GUI:
         dpg.set_primary_window("window_root", True)
         dpg.show_viewport()
 
+        last_sent_key = ""
+
         while dpg.is_dearpygui_running():
+            current_key = ""
+
+            # --- SPRAWDZANIE PRZYCISKÓW GUI (HOLD-TO-MOVE) ---
+            if dpg.does_item_exist("btn_left_lpm") and dpg.is_item_active("btn_left_lpm"):
+                current_key = "j"
+            elif dpg.does_item_exist("btn_right_lpm") and dpg.is_item_active("btn_right_lpm"):
+                current_key = "l"
+            elif dpg.does_item_exist("btn_left_ppm") and dpg.is_item_active("btn_left_ppm"):
+                current_key = "k"
+            elif dpg.does_item_exist("btn_right_ppm") and dpg.is_item_active("btn_right_ppm"):
+                current_key = "i"
+            elif dpg.does_item_exist("btn_left_test") and dpg.is_item_active("btn_left_test"):
+                current_key = "x"
+            elif dpg.does_item_exist("btn_right_test") and dpg.is_item_active("btn_right_test"):
+                current_key = "z"
+
+            # Jeśli nic nie trzyma myszką, sprawdź klawiaturę (pynput)
+            if not current_key:
+                # Pobieramy klawisze z KeyboardInputModule (comms_worker przesyła je przez pipe)
+                # Ale dla uproszczenia tutaj skupimy się na priorytecie myszki
+                pass
+
+            # WYSYŁANIE: Tylko gdy stan się zmienił (naciśnięcie lub puszczenie)
+            if current_key != last_sent_key:
+                if self.is_connected:
+                    # Format: X,Y,SPEED,KEY
+                    self.comms_pipe.send({
+                        "cmd": "SEND",
+                        "value": f"{self.pos_x},{self.pos_y},{self.current_speed},{current_key}"
+                    })
+                last_sent_key = current_key
+
+            # Obsługa wizualna menu
             for page_tag, elements in self.nav_elements.items():
                 config = self.nav_config.get(page_tag)
                 if dpg.does_item_exist(elements["btn"]) and dpg.does_item_exist(elements["text"]):
                     if page_tag == self.active_page_tag:
                         dpg.configure_item(elements["btn"], texture_tag=config["active_tex"])
-                        dpg.bind_item_theme(elements["text"], self.gold_text_theme)
                     else:
                         dpg.configure_item(elements["btn"], texture_tag=config["inactive_tex"])
-                        dpg.bind_item_theme(elements["text"], self.white_text_theme)
-
 
             dpg.render_dearpygui_frame()
 
