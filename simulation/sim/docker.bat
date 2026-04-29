@@ -47,9 +47,6 @@ set "WSL_PATH=/mnt/!LOWER_DRIVE!!FIXED_PATH!"
 :: Usuń ostatni ukośnik
 if "!WSL_PATH:~-1!"=="/" set "WSL_PATH=!WSL_PATH:~0,-1!"
 
-pip install roslibpy PyQt6
-start /B python ../app/gui.py
-
 echo Uruchamianie w: !WSL_PATH!
 wsl -d Ubuntu -e bash -c "cd '!WSL_PATH!' && docker compose up --build"
 
