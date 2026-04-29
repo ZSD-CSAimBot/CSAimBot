@@ -12,7 +12,6 @@ import os
 class SerialCommsModule:
     # Constructor
     def __init__(self, port=None, baud_rate=115200, timeout=2):
-        #Set default port based on OS if not provided
         if port is None:
             currentSystem = platform.system()
             if currentSystem == "Windows":
@@ -30,9 +29,22 @@ class SerialCommsModule:
     # Try to connect with esp
     def connect(self):
         try:
-            self.esp = serial.Serial(port=self.port, baudrate=self.baud_rate, timeout=self.timeout)
+            # 1. Tworzymy pusty obiekt (NIE OTWIERAMY GO W KONSTRUKTORZE)
+            self.esp = serial.Serial()
+            self.esp.port = self.port
+            self.esp.baudrate = self.baud_rate
+            self.esp.timeout = self.timeout
+
+            # 2. KLUCZOWE DLA ESP32-S3: Blokujemy sygnały resetujące z PC
+            self.esp.dtr = False
+            self.esp.rts = False
+
+            # 3. Dopiero teraz bezpiecznie otwieramy port
+            self.esp.open()
             print(f"Connected on {self.port}.")
-            # time.sleep(2)
+
+            # Dajemy Windowsowi i ESP czas na stabilizację bez resetu
+            time.sleep(1)
             return True
         except serial.SerialException as e:
             print(f"Connection error {self.port}\n{e}")
@@ -41,8 +53,7 @@ class SerialCommsModule:
     # Encodes command and sends it to esp
     def send_command(self, command):
         if self.esp and self.esp.is_open:
-            # Flush input buffer to remove old data
-            self.esp.reset_input_buffer()
+            # Upewniamy się, że nie kasujemy bufora wejściowego!
             text_to_send = f"{command}\r".encode('utf-8')
             self.esp.write(text_to_send)
             self.esp.flush()  # Wait until all data is sent
@@ -74,7 +85,7 @@ def comms_worker(conn):
     esp = SerialCommsModule()
     keyboard = KeyboardInputModule()
     last_keys = None
-    last_send_time = None
+    last_send_time = 0.0
 
     is_connected = False # Ustawiamy na False na start
 
@@ -102,21 +113,20 @@ def comms_worker(conn):
                 conn.send({"type": "connection_status", "status": "disconnected"})
 
         # 2. ODCZYT Z ESP32
-        # Używamy esp.esp.in_waiting, aby sprawdzić, czy są dane bez blokowania pętli
-                # 2. ODCZYT Z ESP32
-                try:
-                    # Używamy esp.esp.in_waiting, aby sprawdzić, czy są dane bez blokowania pętli
-                    if is_connected and esp.esp and esp.esp.in_waiting > 0:
-                        response = esp.get_response()
-                        if response:
-                            # Odsyłamy wiadomość do GUI do wyświetlenia w logach
-                            conn.send({"type": "esp_msg", "value": response})
-                except Exception as e:
-                    # Przechwytujemy zerwanie portu przez zakłócenia EMI z solenoidu
-                    print(f"<System> Zerwano połączenie USB (skok napięcia/EMI?): {e}")
-                    esp.disconnect()
-                    is_connected = False
-                    conn.send({"type": "connection_status", "status": "disconnected"})
+        try:
+            # Używamy esp.esp.in_waiting, aby sprawdzić, czy są dane bez blokowania pętli
+            if is_connected and esp.esp and esp.esp.in_waiting > 0:
+                response = esp.get_response()
+                print(f"Received from ESP: {response}")
+                if response:
+                    # Odsyłamy wiadomość do GUI do wyświetlenia w logach
+                    conn.send({"type": "esp_msg", "value": response})
+        except Exception as e:
+            # Przechwytujemy zerwanie portu przez zakłócenia EMI z solenoidu
+            print(f"<System> Zerwano połączenie USB (skok napięcia/EMI?): {e}")
+            esp.disconnect()
+            is_connected = False
+            conn.send({"type": "connection_status", "status": "disconnected"})
 
         # 3. Wysyłanie stanu klawiatury do GUI
         keys = keyboard.get_key()
@@ -149,17 +159,16 @@ class TCPCommsModule:
             self.socket = None
             return False
 
-    # Encodes command and sends it to server
+    # Encodes command and sends it to esp
     def send_command(self, command):
-        if self.socket:
-            try:
-                text_to_send = f"{command}\r\n".encode('utf-8')
-                self.socket.sendall(text_to_send)
-                print(f"Sent: {command}")
-            except socket.error as e:
-                print(f"Send error: {e}")
+        if self.esp and self.esp.is_open:
+            # REMOVED: self.esp.reset_input_buffer() - This was deleting incoming messages!
+            text_to_send = f"{command}\r".encode('utf-8')
+            self.esp.write(text_to_send)
+            self.esp.flush()  # Wait until all data is sent
+            print(f"Sent: {command}")
         else:
-            print("Socket not connected.")
+            print("Port closed. Unable to send command.")
 
     # Tries to read response from server
     def get_response(self):

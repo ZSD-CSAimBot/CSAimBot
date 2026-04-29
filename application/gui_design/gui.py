@@ -948,7 +948,7 @@ class GUI:
                         dpg.set_value("current_keys_text", display_text)
                 elif msg.get("type") == "esp_msg":
                     esp_text = msg.get("value")
-                    print(f"<ESP32> {esp_text}")
+                    print(f"<ESP32> {esp_text}", flush=True)
                 elif msg.get("type") == "stat_update":
                     key, value = msg.get("key"), msg.get("value")
                     if key and value is not None:
