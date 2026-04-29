@@ -2,8 +2,7 @@ import platform
 import socket
 import threading
 import time
-#import keyboard
-from pynput import keyboard as pynput_kb
+import keyboard
 import serial
 import sys
 import os
@@ -12,16 +11,12 @@ import os
 class SerialCommsModule:
     # Constructor
     def __init__(self, port=None, baud_rate=115200, timeout=2):
-        #Set default port based on OS if not provided
+        # Set default port based on OS
         if port is None:
-            currentSystem = platform.system()
-            if currentSystem == "Windows":
-                port = "COM5"
-            elif currentSystem == "Darwin":
-                port = "/dev/cu.usbserial-110"
-            else:
+            if platform.system() == "Windows":
+                port = "COM3"
+            else:  # Linux
                 port = "/dev/ttyUSB0"
-
         self.port = port
         self.baud_rate = baud_rate
         self.timeout = timeout
@@ -103,20 +98,11 @@ def comms_worker(conn):
 
         # 2. ODCZYT Z ESP32
         # Używamy esp.esp.in_waiting, aby sprawdzić, czy są dane bez blokowania pętli
-                # 2. ODCZYT Z ESP32
-                try:
-                    # Używamy esp.esp.in_waiting, aby sprawdzić, czy są dane bez blokowania pętli
-                    if is_connected and esp.esp and esp.esp.in_waiting > 0:
-                        response = esp.get_response()
-                        if response:
-                            # Odsyłamy wiadomość do GUI do wyświetlenia w logach
-                            conn.send({"type": "esp_msg", "value": response})
-                except Exception as e:
-                    # Przechwytujemy zerwanie portu przez zakłócenia EMI z solenoidu
-                    print(f"<System> Zerwano połączenie USB (skok napięcia/EMI?): {e}")
-                    esp.disconnect()
-                    is_connected = False
-                    conn.send({"type": "connection_status", "status": "disconnected"})
+        if is_connected and esp.esp and esp.esp.in_waiting > 0:
+            response = esp.get_response()
+            if response:
+                # Odsyłamy wiadomość do GUI do wyświetlenia w logach
+                conn.send({"type": "esp_msg", "value": response})
 
         # 3. Wysyłanie stanu klawiatury do GUI
         keys = keyboard.get_key()
@@ -274,46 +260,25 @@ class TCPServer:
 
 class KeyboardInputModule:
     def __init__(self, tracked_keys=None, estop_key="p"):
-        # DODANO 'h' DO LISTY
-        self.tracked_keys = tracked_keys or ['i', 'j', 'k', 'l', 'z', 'x', 'v', '1', '2', 'h']
+        # Default keys: i, j, k, l
+        self.tracked_keys = tracked_keys or ['i', 'j', 'k', 'l']
         self.estop_key = estop_key
-        self.pressed_keys = set()
-
-        # Uruchomienie bezpiecznego nasłuchiwania w tle (pynput)
-        self.listener = pynput_kb.Listener(
-            on_press=self.on_press,
-            on_release=self.on_release
-        )
-        self.listener.start()
-
-    def on_press(self, key):
-        try:
-            char = key.char.lower()
-            if char in self.tracked_keys or char == self.estop_key:
-                self.pressed_keys.add(char)
-        except AttributeError:
-            # Ignoruj klawisze funkcyjne (shift, ctrl, alt)
-            pass
-
-    def on_release(self, key):
-        try:
-            char = key.char.lower()
-            if char in self.pressed_keys:
-                self.pressed_keys.remove(char)
-        except AttributeError:
-            pass
 
     def get_key(self):
-        # E-stop zawsze ma najwyższy priorytet
-        if self.estop_key in self.pressed_keys:
-            return self.estop_key
+        try:
+            # E-stop takes absolute priority
+            if keyboard.is_pressed(self.estop_key):
+                return self.estop_key
 
-        # Zwróć wszystkie wciśnięte klawisze w formie stringa (np. "ij")
-        result = ""
-        for k in self.tracked_keys:
-            if k in self.pressed_keys:
-                result += k
-        return result
+            pressed_keys = ""
+            for key in self.tracked_keys:
+                if keyboard.is_pressed(key):
+                    pressed_keys += key
+
+            return pressed_keys
+        except Exception as e:
+            print(f"Keyboard error: {e}")
+            return ""
 
 
 def run_benchmark():
@@ -341,8 +306,9 @@ def run_benchmark():
     sys.stdout = open(os.devnull, 'w')
 
     for i in range(iterations):
-        # Było: payload = f"{i},{i},ij"
-        payload = f"{i},{i},75,ij"  # Dodane statyczne 75 dla testu
+        # Tworzymy pakiet danych do wysłania (np. inkrementujące X i Y oraz przykładowe klawisze)
+        # Format oczekiwany przez Twój ESP: X,Y,keys\r
+        payload = f"{i},{i},ij"
 
         # Mierzymy czas w nanosekundach dla maksymalnej precyzji
         start_time = time.perf_counter()
