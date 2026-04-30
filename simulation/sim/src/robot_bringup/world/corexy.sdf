@@ -21,11 +21,11 @@
     </include>
 
      <model name="myszka">
-      <pose>-0.02 0.005 0.042 0 0 -1.57</pose>
+      <pose>-0.02 0.005 0.02 0 0 -1.57</pose>
       <link name="myszka_link">
-        
+
         <inertial>
-          <mass>0.09</mass> 
+          <mass>0.09</mass>
           <inertia>
             <ixx>1.006e-03</ixx>
             <ixy>1.7663e-08</ixy>
@@ -61,7 +61,6 @@
 
       </link>
     </model>
-    
 
   </world>
 </sdf>

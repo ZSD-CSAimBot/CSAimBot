@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QHBoxLayout, QPushButton, QLabel, QLineEdit, 
                              QGridLayout, QGroupBox)
 from PyQt6.QtCore import pyqtSignal, QObject, Qt
+from PyQt6.QtGui import QFont, QFontDatabase
 
 
 def _repo_root():
@@ -33,6 +34,16 @@ def _pythonw_executable():
 
     pythonw_path = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
     return pythonw_path if os.path.exists(pythonw_path) else sys.executable
+
+
+def _load_gui_font():
+    font_path = os.path.join(_repo_root(), "application", "gui_design", "fonts", "Roboto.ttf")
+    font_id = QFontDatabase.addApplicationFont(font_path)
+    if font_id == -1:
+        return "Arial"
+
+    families = QFontDatabase.applicationFontFamilies(font_id)
+    return families[0] if families else "Arial"
 
 
 def _stop_sim_container():
@@ -136,6 +147,8 @@ class CSAimBotGUI(QMainWindow):
         self.setWindowTitle("Simulation control pannel")
         self.setFixedSize(540, 760) 
         self.signals = RosSignals()
+        self.font_family = _load_gui_font()
+        QApplication.instance().setFont(QFont(self.font_family, 10))
 
         self.current_x = 0.0
         self.current_y = 0.0
@@ -171,7 +184,7 @@ class CSAimBotGUI(QMainWindow):
                 background-color: #1a1a21;
             }
             QWidget {
-                font-family: 'Segoe UI', Arial, sans-serif;
+                font-family: '__GUI_FONT__', Arial, sans-serif;
                 font-size: 14px;
                 color: #e0e0e0;
             }
@@ -232,6 +245,7 @@ class CSAimBotGUI(QMainWindow):
                 background-color: #e6a600;
             }
         """
+        style_sheet = style_sheet.replace("__GUI_FONT__", self.font_family)
         self.setStyleSheet(style_sheet)
 
     def run_sim(self):
