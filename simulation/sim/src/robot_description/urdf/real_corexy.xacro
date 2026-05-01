@@ -3,7 +3,7 @@
 
     <xacro:property name="base_width" value="0.5178" />
     <xacro:property name="base_length" value="0.4838" />
-    <xacro:property name="base_height" value="0.04" />
+    <xacro:property name="base_height" value="0.01" />
 
 
     <material name="grey">
@@ -56,17 +56,17 @@
         <inertial>
             <origin xyz="0 0 ${base_height/2.0}" rpy="0 0 0"/>
             <mass value="10"/>
-            <inertia ixx="${(10/12.0) * (base_height*base_height + base_length*base_length)}" ixy="0.0" ixz="0.0" 
-                     iyy="${(10/12.0) * (base_width*base_width + base_height*base_height)}" iyz="0.0" 
+            <inertia ixx="${(10/12.0) * (base_height*base_height + base_length*base_length)}" ixy="0.0" ixz="0.0"
+                     iyy="${(10/12.0) * (base_width*base_width + base_height*base_height)}" iyz="0.0"
                      izz="${(10/12.0) * (base_width*base_width + base_length*base_length)}"/>
         </inertial>
         <visual>
+            <origin xyz="0 0 ${base_height/2.0}" rpy="0 0 0" />
             <geometry>
                 <box size="${base_width} ${base_length} ${base_height}" />
             </geometry>
-            <origin xyz="0 0 ${base_height/2.0}" rpy="0 0 0" />
             <material name="grey" />
-        </visual> 
+        </visual>
         <collision>
             <origin xyz="0 0 ${base_height/2.0}" rpy="0 0 0" />
             <geometry>
@@ -77,7 +77,7 @@
 
     <link name="podstawa_prawa">
         <inertial>
-            <origin xyz="0 0.042 0.167" rpy="0 0 ${-pi/2.0}" />
+            <origin xyz="0 0.042 0.167" rpy="${-pi/2.0} 0 ${-pi/2.0}" />
             <mass value="0.11223308489437728" />
             <inertia ixx="0.00041028645624052035" iyy="6.286050337893367e-05" izz="0.0004102865492015828" ixy="-5.945579440957277e-06" iyz="5.944881698247313e-06" ixz="-7.289346889472609e-06" />
         </inertial>
@@ -141,7 +141,7 @@
 
     <link name="podstawa_silnik_lewa">
         <inertial>
-            <origin xyz="0 0 0.169" rpy="${pi/2.0} 0 ${pi}" />
+            <origin xyz="0 0 0.169" rpy="${-pi/2.0} 0 ${pi}" />
             <mass value="2.03711e-01"/>
             <inertia ixx="7.384e-04" ixy="2.915579e-06" ixz="1.7055322e-05" iyy="6.934e-04" iyz="-5.0344746e-05" izz="2.596e-04"/>
         </inertial>
@@ -153,7 +153,7 @@
             <material name="yellow" />
         </visual>
         <collision>
-            <origin xyz="0 0 0.169" rpy="${pi/2.0} 0 ${pi}" />
+            <origin xyz="0 0 0.169" rpy="${-pi/2.0} 0 ${pi}" />
             <geometry>
                 <mesh filename="package://robot_description/meshes/podstawa_silnik_lewy.stl" scale="0.001 0.001 0.001" />
             </geometry>
@@ -383,7 +383,7 @@
             <material name="yellow" />
         </visual>
         <collision>
-            <origin xxyz="0.0 0.0 -0.002" rpy="${pi/2.0} ${pi} 0" />
+            <origin xyz="0.0 0.0 -0.002" rpy="${pi/2.0} ${pi} 0" />
             <geometry>
                 <mesh filename="package://robot_description/meshes/przykrecenie_prawe.stl" scale="0.001 0.001 0.001" />
             </geometry>
@@ -392,7 +392,7 @@
 
     <link name="przykrecenie_lewe">
         <inertial>
-            <origin xyz="0.0 0.0 -0.002" rpy="${pi/2.0} ${pi} 0"  />
+            <origin xyz="0.0 0.0 -0.002" rpy="${pi/2.0} ${pi} ${pi}"  />
             <mass value="1.4997e-02"/>
             <inertia ixx="9.736263e-06" ixy="1.754423e-06" ixz="-6.07036e-07" iyy="9.893374e-06" iyz="-5.9791e-07" izz="1.8495045e-05"/>
         </inertial>
@@ -404,7 +404,7 @@
             <material name="yellow" />
         </visual>
         <collision>
-            <origin xyz="0.0 0.0 -0.002" rpy="${pi/2.0} ${pi} 0" />
+            <origin xyz="0.0 0.0 -0.002" rpy="${pi/2.0} ${pi} ${pi}" />
             <geometry>
                 <mesh filename="package://robot_description/meshes/przykrecenie_lewe.stl" scale="0.001 0.001 0.001" />
             </geometry>
@@ -716,7 +716,7 @@
 
     <link name="listwa_zebata_prawa">
         <inertial>
-            <origin xyz="0 -0.0708 0" rpy="0 ${pi/2.0} ${pi}"  />
+            <origin xyz="0 -0.0708 0" rpy="0 ${pi/2.0} 0"  />
             <mass value="1.2916e-02"/>
             <inertia ixx="5.0123e-08" ixy="-6.8e-10" ixz="3.553e-19" iyy="5.959033e-06" iyz="0.0e+00" izz="5.954577e-06"/>
         </inertial>
@@ -728,7 +728,7 @@
             <material name="dark_grey" />
         </visual>
         <collision>
-            <origin xyz="0 -0.0708 0" rpy="0 ${pi/2.0} ${pi}"  />
+            <origin xyz="0 -0.0708 0" rpy="0 ${pi/2.0} 0"  />
             <geometry>
                 <mesh filename="package://robot_description/meshes/listwa_zebata.stl" scale="0.001 0.001 0.001" />
             </geometry>
@@ -946,6 +946,14 @@
             </geometry>
         </collision>
     </link>
+
+    <link name="world"/>
+
+    <joint name="world_to_base_link" type="fixed">
+        <parent link="world"/>
+        <child link="base_link"/>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+    </joint>
 
     <joint name="base_link_podstawa_prawa" type="fixed">
         <parent link="base_link" />
@@ -1266,7 +1274,7 @@
         <parent link="monter_chwytak" />
         <child link="solenoid_trzpien_lewy" />
         <origin xyz="0.023 0 -0.018" rpy="0 0 0" />
-        <limit lower="-0.009" 
+        <limit lower="-0.004" 
                upper="0"
                effort="10.0" velocity="3.0"/>
         <axis xyz="0 0 1"/>
@@ -1276,7 +1284,7 @@
         <parent link="monter_chwytak" />
         <child link="solenoid_trzpien_prawy" />
         <origin xyz="0.023 0 -0.018" rpy="0 0 0" />
-        <limit lower="-0.009" 
+        <limit lower="-0.004" 
                upper="0"
                effort="10.0" velocity="3.0"/>
         <axis xyz="0 0 1"/>

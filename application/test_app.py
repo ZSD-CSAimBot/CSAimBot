@@ -80,8 +80,10 @@ def gui_app():
 
     with patch.dict("sys.modules", {"dearpygui": MagicMock(), "dearpygui.dearpygui": mock_dpg}):
         from gui_design.gui import GUI
-        pipe = MagicMock()
-        app = GUI(pipe)
+        vision_pipe = MagicMock()
+        comms_pipe = MagicMock()
+        sim_pipe = MagicMock()
+        app = GUI(vision_pipe, comms_pipe, sim_pipe)
         yield app
 
 
