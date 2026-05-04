@@ -12,13 +12,13 @@ onnx==1.21.0
 onnxruntime-gpu==1.24.4
 onnxslim==0.1.91
 dearpygui==2.2
-numpy==2.3.5
+numpy==2.4.4
 pyserial==3.5
 keyboard==0.13.5 #not needed for Mac/Linux but might be good for windows
 roslibpy==2.0.0
 PyQt6==6.11.0
 pytest==9.0.3
-pynput==1.7.6
+pynput==1.8.1
 
 bettercam==1.0.0; sys_platform == 'win32'
 cupy-cuda12x==13.6.0; sys_platform == 'win32'
