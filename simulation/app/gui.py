@@ -1,8 +1,12 @@
+
+"""Simulation control GUI using PyQt6 and ROS bridge."""
+
 import os
 import subprocess
 import sys
 import threading
 import roslibpy
+
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                              QHBoxLayout, QPushButton, QLabel, QLineEdit, 
                              QGridLayout, QGroupBox)
@@ -11,14 +15,23 @@ from PyQt6.QtGui import QFont, QFontDatabase
 
 
 def _repo_root():
+    """Get the absolute path to the project root."""
     return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 
 def _is_process_running(process):
+    """Check if a subprocess is actively running."""
     return process is not None and process.poll() is None
 
 
 def _send_sim_status(pipe, process, message=None):
+    """Send simulation status through the IPC pipe.
+
+    Args:
+        pipe: Pipe connection to the parent process.
+        process: The simulation subprocess or None.
+        message: Optional status message to include.
+    """
     payload = {
         "type": "simulation_status",
         "status": "running" if _is_process_running(process) else "stopped"
@@ -29,6 +42,7 @@ def _send_sim_status(pipe, process, message=None):
 
 
 def _pythonw_executable():
+    """Get the appropriate Python executable for GUI applications."""
     if sys.platform != "win32":
         return sys.executable
 
@@ -37,6 +51,7 @@ def _pythonw_executable():
 
 
 def _load_gui_font():
+    """Load and register the application font from local resources."""
     font_path = os.path.join(_repo_root(), "application", "gui_design", "fonts", "Roboto.ttf")
     font_id = QFontDatabase.addApplicationFont(font_path)
     if font_id == -1:
@@ -47,6 +62,7 @@ def _load_gui_font():
 
 
 def _stop_sim_container():
+    """Stop the Docker simulation container."""
     try:
         if sys.platform == "win32":
             subprocess.run(
@@ -65,6 +81,15 @@ def _stop_sim_container():
 
 
 def _start_sim_gui_process(pipe, process):
+    """Start the simulation GUI process.
+
+    Args:
+        pipe: Pipe connection for status reporting.
+        process: Current process or None.
+
+    Returns:
+        The new or existing simulation subprocess.
+    """
     if _is_process_running(process):
         _send_sim_status(pipe, process, "Simulation is already running.")
         return process
@@ -83,6 +108,15 @@ def _start_sim_gui_process(pipe, process):
 
 
 def _stop_sim_gui_process(pipe, process):
+    """Stop the simulation GUI process and Docker container.
+
+    Args:
+        pipe: Pipe connection for status reporting.
+        process: The simulation subprocess.
+
+    Returns:
+        None (process is terminated).
+    """
     if not _is_process_running(process):
         _send_sim_status(pipe, None, "Simulation is not running.")
         return None
@@ -103,6 +137,13 @@ def _stop_sim_gui_process(pipe, process):
 
 
 def simulation_worker(pipe):
+    """Main worker loop for managing simulation lifecycle.
+
+    Handles START, STOP, STATUS, and QUIT commands from the parent process.
+
+    Args:
+        pipe: Pipe connection to the parent (main GUI).
+    """
     process = None
     last_status = None
     running = True
@@ -135,13 +176,18 @@ def simulation_worker(pipe):
 
 
 class RosSignals(QObject):
+    """Signals used for thread-safe updates from ROS callbacks."""
+
     connected = pyqtSignal()
     error = pyqtSignal(str)
     position_updated = pyqtSignal(float, float)
     reached_target = pyqtSignal()
 
 class CSAimBotGUI(QMainWindow):
+    """Main simulation control GUI window using PyQt6."""
+
     def __init__(self):
+        """Initialize the GUI, connect to ROS, and launch the simulator."""
         super().__init__()
 
         self.setWindowTitle("Simulation control pannel")
@@ -179,6 +225,7 @@ class CSAimBotGUI(QMainWindow):
         threading.Thread(target=self.connect_to_ros, daemon=True).start()
 
     def apply_styles(self):
+        """Apply custom stylesheet to all UI elements."""
         style_sheet = """
             QMainWindow {
                 background-color: #1a1a21;
@@ -249,7 +296,11 @@ class CSAimBotGUI(QMainWindow):
         self.setStyleSheet(style_sheet)
 
     def run_sim(self):
+        """Launch the Docker-based simulator in a subprocess.
 
+        Returns:
+            The simulator subprocess handle.
+        """
         log_path = os.path.abspath("simulation/docker_logs/docker.log")
         os.makedirs(os.path.dirname(log_path), exist_ok=True)
 
@@ -285,6 +336,7 @@ class CSAimBotGUI(QMainWindow):
         return sim_process
     
     def stop_sim(self):
+        """Shut down the Docker container and simulation process."""
         print("Shutting down docker container(csaimbot_sim)...")
         try:
             _stop_sim_container()
@@ -312,6 +364,7 @@ class CSAimBotGUI(QMainWindow):
             self.sim_log_file = None
 
     def build_ui(self):
+        """Construct the GUI layout with all control panels."""
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QVBoxLayout(central_widget)
@@ -411,6 +464,7 @@ class CSAimBotGUI(QMainWindow):
         main_layout.addWidget(target_group)
 
     def connect_to_ros(self):
+        """Establish connection to ROS and subscribe to joint state updates."""
         try:
             self.ros.run(timeout=999999)
             if self.ros.is_connected:
@@ -420,14 +474,25 @@ class CSAimBotGUI(QMainWindow):
             self.signals.error.emit(str(e))
 
     def on_connected(self):
+        """Update UI when ROS connection is established."""
         self.label_status.setText("Connected.")
         self.label_status.setStyleSheet("color: #00ff00; font-size: 16px;")
 
     def on_connection_error(self, err_msg):
+        """Display connection error message in the status label.
+
+        Args:
+            err_msg: Error message text.
+        """
         self.label_status.setText(f"Connection error: {err_msg}")
         self.label_status.setStyleSheet("color: #cc0000; font-size: 16px;")
 
     def joint_states_callback(self, msg):
+        """Handle ROS joint state messages and check for target reached.
+
+        Args:
+            msg: Joint state message from ROS.
+        """
         names = msg['name']
         positions = msg['position']
         if 'x_axis_joint' in names and 'y_axis_joint' in names:
@@ -447,34 +512,59 @@ class CSAimBotGUI(QMainWindow):
                     self.signals.reached_target.emit()
 
     def update_position_label(self, x, y):
+        """Update the position display on the UI.
+
+        Args:
+            x: Current X coordinate.
+            y: Current Y coordinate.
+        """
         self.label_pos.setText(f"Current position:  X = {x:.4f}  |  Y = {y:.4f}")
 
     def move_platform(self, dx, dy):
+        """Send a delta movement command to the platform.
+
+        Args:
+            dx: Delta X movement.
+            dy: Delta Y movement.
+        """
         if not self.ros.is_connected: return
         msg = roslibpy.Message({'data': [dy, dx]})
         self.delta_pub.publish(msg)
 
     def send_z_command(self, is_up):
+        """Control the Z-axis (vertical) movement.
+
+        Args:
+            is_up: True to move up, False to move down.
+        """
         if not self.ros.is_connected: return
         req = roslibpy.ServiceRequest({'data': is_up})
         self.z_axis_srv.call(req, lambda res: print(f"Z-Axis: {res.get('message', '')}"))
 
     def send_gripper(self, close_gripper):
+        """Control the gripper open/close state.
+
+        Args:
+            close_gripper: True to close, False to open.
+        """
         if not self.ros.is_connected: return
         req = roslibpy.ServiceRequest({'data': close_gripper})
         self.gripper_srv.call(req, lambda res: print(f"Gripper: {res.get('message', '')}"))
 
     def send_left_click(self):
+        """Publish a left mouse click event."""
         if not self.ros.is_connected: return
         msg = roslibpy.Message({})
         self.click_left_pub.publish(msg)
 
     def send_right_click(self):
+        """Publish a right mouse click event."""
         if not self.ros.is_connected: return
         msg = roslibpy.Message({})
         self.click_right_pub.publish(msg)
 
     def go_and_click(self):
+        """Move to the target coordinates and fire a left click."""
         try:
             self.target_x = float(self.entry_x.text())
             self.target_y = float(self.entry_y.text())
@@ -490,10 +580,12 @@ class CSAimBotGUI(QMainWindow):
             pass
 
     def execute_auto_click(self):
+        """Fire a left click when target position is reached."""
         msg = roslibpy.Message({})
         self.click_left_pub.publish(msg)
 
     def keyPressEvent(self, event):
+        """Handle keyboard input for platform movement (WASD/QECZ)."""
         if event.isAutoRepeat():
             return
             
@@ -518,6 +610,7 @@ class CSAimBotGUI(QMainWindow):
         super().keyPressEvent(event)
 
     def closeEvent(self, event):
+        """Clean up resources when the window closes."""
         self.stop_sim()
         if self.ros.is_connected:
             self.ros.terminate()

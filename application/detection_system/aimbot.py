@@ -1,3 +1,5 @@
+"""GPU-based vision pipeline used by the detection worker process."""
+
 import time
 import cv2
 import torch
@@ -5,16 +7,24 @@ import numpy as np
 from ultralytics import YOLO
 from detection_system.camera import CameraProvider
 
+
 class AimBot:
     """
-    Real-time object detection system optimized for Zero-Copy on GPU.
+    Real-time object detection system optimized for GPU execution.
     """
     def __init__(self, model_path):
+        """
+        Initialize the vision pipeline.
+
+        Args:
+            model_path: Path to the YOLO model weights.
+        """
         self.prepare_camera()
         self.prepare_model(model_path)
         self.allocate_variables()
 
     def prepare_camera(self):
+        """Configure the capture region and camera provider."""
         SCREEN_WIDTH = 2560
         SCREEN_HEIGHT = 1440
         self.FOV_WIDTH = 1280
@@ -30,11 +40,17 @@ class AimBot:
         self.debug_frame = None
     
     def prepare_model(self, model_path):
+        """Load the YOLO model and run a CUDA warm-up pass.
+
+        Args:
+            model_path: Path to the YOLO model weights.
+        """
         self.model = YOLO(model_path, task='detect')
         warmup_input = torch.zeros((1, 3, self.FOV_HEIGHT, self.FOV_WIDTH), dtype=torch.float16, device="cuda")
         self.model(warmup_input, verbose=False)
 
     def allocate_variables(self):
+        """Initialize runtime state used during inference and display."""
         self.show_debug_window = True
         self.model_tensor = torch.empty((1, 3, self.FOV_HEIGHT, self.FOV_WIDTH), dtype=torch.float16, device="cuda")
         self.best_target_position = (0, 0)
@@ -45,6 +61,7 @@ class AimBot:
         self.body_class_id = [0, 6]
 
     def capture_and_preprocess_frame(self):
+        """Grab a frame from the camera and copy it into the model tensor."""
         dl_tensor = self.camera.grab_gpu_tensor()
         if dl_tensor is not None:
             if self.show_debug_window:
@@ -57,14 +74,28 @@ class AimBot:
         return False
 
     def recoil_compensation(self, offset_x, offset_y):
+        """Apply a small vertical correction while recoil control is enabled.
+
+        Args:
+            offset_x: Horizontal offset from screen center.
+            offset_y: Vertical offset from screen center.
+
+        Returns:
+            A tuple containing the adjusted x and y offsets.
+        """
         if self.recoil_control:
             if abs(offset_x) < self.shoot_threshold and abs(offset_y) < self.shoot_threshold:
                 offset_y += self.recoil_strength
         return offset_x, offset_y
     
     def calculate_best_target_position(self, boxes_data_tensor):
-        """
-        Calculates the best target position on the GPU. Returns the offset from the center of the FOV to the best target.
+        """Select the nearest valid detection and return its offset from screen center.
+
+        Args:
+            boxes_data_tensor: Tensor of detections in xyxy format with class ids.
+
+        Returns:
+            A tuple of offsets from screen center, or (None, None) when no valid target exists.
         """
         if boxes_data_tensor is None or boxes_data_tensor.shape[0] == 0:
             return None, None
@@ -89,6 +120,7 @@ class AimBot:
         return self.recoil_compensation(offset_x, offset_y)
 
     def display_results(self, boxes_data):
+        """Render debug overlays for the current frame when enabled."""
         if self.debug_frame is not None:
             if boxes_data is not None and len(boxes_data) > 0:
                 xyxy = boxes_data[:, :4]
@@ -124,6 +156,7 @@ class AimBot:
                 cv2.destroyWindow("Aimbot Vision (Debug)")
     
     def process_single_frame(self):
+        """Run one full capture, inference, and display cycle."""
         if not self.capture_and_preprocess_frame():
             return
 
@@ -142,14 +175,24 @@ class AimBot:
             self.best_target_position = (0, 0)
             if self.show_debug_window:
                 self.display_results(None)
+
     def cleanup(self):
+        """Release camera resources and close OpenCV windows."""
         self.camera.release()
         cv2.destroyAllWindows()
 
 
 def vision_worker(pipe_conn, model_path, target_fps):
     """
-    Worker function for the vision process. Listens for commands and processes frames accordingly.
+    Vision worker process entry point.
+
+    Receives control commands from the parent process, runs inference when active,
+    and publishes the latest target offsets back through the pipe.
+
+    Args:
+        pipe_conn: Multiprocessing pipe connection used for IPC.
+        model_path: Path to the YOLO model weights.
+        target_fps: Target processing rate for the vision loop.
     """
     aimbot = AimBot(model_path)
     is_running = False

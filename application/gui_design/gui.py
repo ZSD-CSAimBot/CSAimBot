@@ -6,17 +6,28 @@ import random
 import dearpygui.dearpygui as dpg
 import time
 import serial.tools.list_ports
-""" !!!! WAŻNE 
-X jest krańcówką PRZY silniku  
-Y jest osią szyny wózka z chwytakiem
-"""
+"""Desktop GUI for CSAimBot control, telemetry, and settings."""
+
+# IMPORTANT:
+# X is the end stop near the motor.
+# Y is the carriage axis with the gripper.
 from utils.json_utils import StatsManager
 
 
 class GUI:
+    """Main Dear PyGui application wrapper."""
+
     def __init__(self, vision_pipe, comms_pipe, sim_pipe):
-        self.pipe = vision_pipe  # Pipe do obrazu/YOLO
-        self.comms_pipe = comms_pipe  # Pipe do modułu ESP i klawiatury
+        """
+        Initialize the GUI and wire up IPC channels.
+
+        Args:
+            vision_pipe: Pipe used to communicate with the vision worker.
+            comms_pipe: Pipe used to communicate with the serial worker.
+            sim_pipe: Pipe used to communicate with the simulation worker.
+        """
+        self.pipe = vision_pipe 
+        self.comms_pipe = comms_pipe
         self.sim_pipe = sim_pipe
         self.simulation_state = "stopped"
         self.running = True
@@ -105,6 +116,11 @@ class GUI:
         self.update_simulation_display()
 
     def switch_page(self, sender, app_data, user_data):
+        """Switch the visible page in the main window.
+
+        Args:
+            user_data: Tag of the page that should be shown.
+        """
         pages = ["page_home", "page_control", "page_stat", "page_settings"]
         for page in pages:
             if dpg.does_item_exist(page):
@@ -116,6 +132,7 @@ class GUI:
             self.toggle_sidebar(None, None)
 
     def setup_fonts(self):
+        """Load the UI font and apply supported Unicode ranges."""
         current_dir = os.path.dirname(os.path.abspath(__file__))
         font_path = os.path.join(current_dir, "fonts", "Roboto.ttf")
 
@@ -127,6 +144,17 @@ class GUI:
                 dpg.bind_font(self.default_font)
 
     def create_rbtn_theme(self, bg_color, hover_color, dot_color, text_color):
+        """Create a radio button theme.
+
+        Args:
+            bg_color: Normal frame background color.
+            hover_color: Hover state background color.
+            dot_color: Check mark color.
+            text_color: Label text color.
+
+        Returns:
+            Dear PyGui theme identifier.
+        """
         with dpg.theme() as theme_id:
             with dpg.theme_component(dpg.mvRadioButton):
                 dpg.add_theme_color(dpg.mvThemeCol_FrameBg, bg_color)
@@ -137,6 +165,7 @@ class GUI:
         return theme_id
 
     def setup_themes(self):
+        """Create the shared themes used across the interface."""
         with dpg.theme() as self.global_theme:
             with dpg.theme_component(dpg.mvAll):
                 dpg.add_theme_color(dpg.mvThemeCol_WindowBg, [54, 57, 63, 255])
@@ -227,6 +256,17 @@ class GUI:
         self.invisible_btn_theme = self.create_btn_theme([0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0])
 
     def create_btn_theme(self, color, hover_color, active_color, text_color=[255, 255, 255]):
+        """Create a button theme.
+
+        Args:
+            color: Default button color.
+            hover_color: Hover state color.
+            active_color: Pressed state color.
+            text_color: Button text color.
+
+        Returns:
+            Dear PyGui theme identifier.
+        """
         with dpg.theme() as theme_id:
             with dpg.theme_component(dpg.mvButton):
                 dpg.add_theme_color(dpg.mvThemeCol_Button, color)
@@ -242,6 +282,7 @@ class GUI:
         return theme_id
 
     def load_textures(self):
+        """Load image assets into Dear PyGui textures."""
         current_dir = os.path.dirname(os.path.abspath(__file__))
 
         with dpg.texture_registry(show=False):
@@ -287,6 +328,7 @@ class GUI:
 
 
     def toggle_sidebar(self, sender, app_data):
+        """Expand or collapse the navigation sidebar."""
         self.sidebar_expanded = not self.sidebar_expanded
         new_width = 235 if self.sidebar_expanded else 60
         dpg.configure_item("window_sidebar", width=new_width)
@@ -310,6 +352,13 @@ class GUI:
             dpg.configure_item("group_conn_text_placeholder", show=not self.sidebar_expanded)
 
     def add_nav_item(self, icon_or_texture_tag, text_label, page_tag):
+        """Add a navigation button and label pair.
+
+        Args:
+            icon_or_texture_tag: Texture tag or fallback label for the button.
+            text_label: Visible text shown in the expanded sidebar.
+            page_tag: Tag of the page to show when selected.
+        """
         with dpg.group(horizontal=True):
             if dpg.does_alias_exist(icon_or_texture_tag):
                 btn = dpg.add_image_button(texture_tag=icon_or_texture_tag, width=50, height=50,
@@ -327,16 +376,19 @@ class GUI:
         dpg.add_spacer(height=5)
 
     def on_language_change(self, sender, app_data):
+        """Apply the selected language to the visible labels.
+
+        Args:
+            app_data: Selected language key.
+        """
         self.current_lang = app_data
         t = self.lang_dict[self.current_lang]
 
-        # Tłumaczenie Paska Nawigacji
         nav_mapping = {"page_home": "nav_home", "page_control": "nav_control", "page_stat": "nav_stat",
                        "page_settings": "nav_settings"}
         for page_tag, dict_key in nav_mapping.items():
             tag = f"nav_text_{page_tag}"
             if dpg.does_item_exist(tag):
-                # Do aktualizacji dpg.add_text używamy set_value zamiast configure_item
                 dpg.set_value(tag, t[dict_key])
 
         stat_ids = ["lmb", "rmb", "time", "mouse", "dist", "energy", "unknown", "keys"]
@@ -348,7 +400,6 @@ class GUI:
             if dpg.does_item_exist(desc_tag):
                 dpg.set_value(desc_tag, t[f"stat_{s_id}_desc"])
 
-        # Tłumaczenie Przycisków
         button_tags = [
             ("btn_start_home", "start"), ("btn_start_control", "start"),
             ("btn_cal_home", "cal"), ("btn_cal_control", "cal"),
@@ -360,7 +411,6 @@ class GUI:
             if dpg.does_item_exist(tag):
                 dpg.configure_item(tag, label=t[dict_key])
 
-        # Tłumaczenie Zwykłych Tekstów
         text_tags = [
             ("txt_lang", "lang"), ("txt_res", "res"), ("txt_port", "port"),
             ("txt_target_home", "target"), ("txt_target_control", "target"),
@@ -370,11 +420,9 @@ class GUI:
             if dpg.does_item_exist(tag):
                 dpg.set_value(tag, t[dict_key])
 
-        # Tłumaczenie Checkboxów
         if dpg.does_item_exist("chk_debug_home"): dpg.configure_item("chk_debug_home", label=t["opencv"])
         if dpg.does_item_exist("chk_debug_control"): dpg.configure_item("chk_debug_control", label=t["opencv"])
 
-        # Status Połączenia na Pasku
         text_val = t["status_ok"] if self.is_connected else f"{t['status_err']}{self.connection_msg}"
         if hasattr(self, "conn_text") and dpg.does_item_exist(self.conn_text):
             dpg.set_value(self.conn_text, text_val)
@@ -388,6 +436,7 @@ class GUI:
             dpg.set_value("speed_text_label_control", f"{t['speed']}: {curr_speed}%")
 
     def update_connection_display(self):
+        """Refresh the connection icon and status text."""
         t = self.lang_dict[self.current_lang]
         icon_texture = "tex_conn_red"
         full_texture = "tex_conn_red_full"
@@ -419,6 +468,11 @@ class GUI:
             dpg.set_value(self.conn_text, display_text)
 
     def add_sim_controls(self, suffix):
+        """Add simulation start and stop buttons for a page.
+
+        Args:
+            suffix: Page suffix used to build unique widget tags.
+        """
         with dpg.group(horizontal=True):
             dpg.add_spacer(width=14)
             btn_start_sim = dpg.add_button(
@@ -441,6 +495,7 @@ class GUI:
         dpg.bind_item_theme(btn_stop_sim, self.red_btn_theme)
 
     def build_ui(self):
+        """Construct the full Dear PyGui interface."""
         dpg.bind_theme(self.global_theme)
         with dpg.window(tag="window_root", width=self.width, height=self.height, no_title_bar=True, no_resize=True,
                         no_move=True):
@@ -619,13 +674,12 @@ class GUI:
                                         dpg.bind_item_theme(btn_action, self.gold_btn_theme)
 
                                         dpg.add_spacer(width=5)
-                                        # Przykładowy fragment w build_ui:
+
                                         btn_left = dpg.add_button(label="<", width=70, height=45,
                                                                   callback=self.on_step_adjust,
                                                                   user_data=(action_key, -1),
                                                                   tag=f"btn_left_{action_key}")
 
-                                        # ... analogicznie dla ppm i test ...
                                         dpg.bind_item_theme(btn_left, self.gold_btn_theme)
 
                                         dpg.add_spacer(width=5)
@@ -683,7 +737,6 @@ class GUI:
                         with dpg.child_window(width=600, height=50, no_scrollbar=True) as row_lang:
                             txt_lang = dpg.add_text("Language", tag="txt_lang", pos=[20, 13])
                             dpg.bind_item_theme(txt_lang, self.white_text_theme)
-                            # combo box sztywno przypięty na osi X (400px), niezależnie od tekstu!
                             combo_lang = dpg.add_combo(items=["English", "Polski"], default_value="English", width=180, pos=[400, 13], callback=self.on_language_change)
                             dpg.bind_item_theme(combo_lang, self.gold_combo_theme)
                         dpg.bind_item_theme(row_lang, self.settings_row_theme)
@@ -700,11 +753,9 @@ class GUI:
                         with dpg.child_window(width=600, height=50, no_scrollbar=True) as row_port:
                             txt_port = dpg.add_text("COM Port", tag="txt_port", pos=[20, 13])
                             dpg.bind_item_theme(txt_port, self.white_text_theme)
-
-                            # Pobranie dostępnych portów COM w systemie
                             available_ports = [port.device for port in serial.tools.list_ports.comports()]
                             if not available_ports:
-                                available_ports = ["COM3"]  # Fallback
+                                available_ports = ["COM3"]
 
                             combo_port = dpg.add_combo(items=available_ports, default_value=available_ports[0],
                                                        width=180, pos=[400, 13], callback=self.on_port_change)
@@ -804,7 +855,6 @@ class GUI:
                             txt = dpg.add_text(item_config["label"], show=False, tag=text_tag)
                             dpg.bind_item_theme(txt, self.gray_text_theme)
 
-                            # Rejestrujemy kliknięcie lewym przyciskiem myszy na samym tekście
                             with dpg.item_handler_registry() as text_click_handler:
                                 dpg.add_item_clicked_handler(button=0, callback=self.switch_page, user_data=page_tag)
                             dpg.bind_item_handler_registry(txt, text_click_handler)
@@ -830,26 +880,34 @@ class GUI:
 
                 with dpg.group(horizontal=True, tag="group_conn_icon", show=True):
                     self.btn_connect_icon = dpg.add_image_button(texture_tag=tex_icon, width=50, height=50, indent=2,
-                                                           callback=self.on_connect_click) # Dodaj to
+                                                           callback=self.on_connect_click)  # Compact connection toggle
                     dpg.bind_item_theme(self.btn_connect_icon, self.transparent_btn_theme)
 
                 with dpg.group(horizontal=True, tag="group_conn_full", show=False):
                     self.btn_connect_full = dpg.add_image_button(texture_tag=tex_full, width=220, height=50, indent=2,
-                                                           callback=self.on_connect_click) # Dodaj to
+                                                           callback=self.on_connect_click)  # Full-width connection toggle
                     dpg.bind_item_theme(self.btn_connect_full, self.transparent_btn_theme)
 
-    def on_speed_change_control(self, sender, app_data):
-        self.current_speed = int(app_data) # DODANE: Zapisz aktualną wartość slidera
+    def on_speed_change_control(self, app_data):
+        """Update the active speed setting.
+
+        Args:
+            app_data: Slider value from the control page.
+        """
+        self.current_speed = int(app_data)
         t = self.lang_dict[self.current_lang]
         dpg.set_value("speed_text_label_control", f"{t['speed']}: {app_data}%")
 
-    def on_target_change(self, sender, app_data):
-        # Synchronizacja elementu na obu podstronach (Home i Control)
+    def on_target_change(self, app_data):
+        """Update target prioritization across the UI.
+
+        Args:
+            app_data: Selected target mode.
+        """
         for tag in ["rbtn_target_home", "rbtn_target_control"]:
             if dpg.does_item_exist(tag):
                 dpg.set_value(tag, app_data)
 
-                # Nałożenie odpowiedniego koloru na obu stronach
                 if app_data == "TT":
                     dpg.bind_item_theme(tag, self.yellow_rbtn_theme)
                 elif app_data == "CT":
@@ -857,11 +915,14 @@ class GUI:
                 else:
                     dpg.bind_item_theme(tag, self.violet_rbtn_theme)
 
-        # Wysłanie komendy
         self.pipe.send({"cmd": "SET_TARGET", "value": app_data})
 
     def on_debug_toggle(self, sender, app_data):
-        # Synchronizacja checkboxa na obu podstronach
+        """Toggle the OpenCV debug preview.
+
+        Args:
+            app_data: Checkbox state.
+        """
         for tag in ["chk_debug_home", "chk_debug_control"]:
             if dpg.does_item_exist(tag):
                 dpg.set_value(tag, app_data)
@@ -869,6 +930,13 @@ class GUI:
         self.pipe.send({"cmd": "DEBUG", "value": app_data})
 
     def add_log(self, text, color=[255, 255, 255], parent=None):
+        """Append a log line to the available log panel.
+
+        Args:
+            text: Log message text.
+            color: Text color for the log line.
+            parent: Optional parent group tag.
+        """
         if parent:
             if dpg.does_item_exist(parent):
                 dpg.add_text(text, parent=parent, color=color)
@@ -878,6 +946,7 @@ class GUI:
                     dpg.add_text(text, parent=group, color=color)
 
     def refresh_stats_display(self):
+        """Reload stats from storage and update the statistic cards."""
         self.stats_manager.reload()
         for key in StatsManager.DEFAULTS:
             tag = f"stat_val_{key}"
@@ -885,12 +954,17 @@ class GUI:
                 dpg.configure_item(tag, label=StatsManager.format_value(key, self.stats_manager.get(key)))
 
     def on_port_change(self, sender, app_data):
+        """Request a serial port change.
+
+        Args:
+            app_data: Selected COM port.
+        """
         self.connection_state = "connecting"
         self.update_connection_display()
         self.comms_pipe.send({"cmd": "CHANGE_PORT", "value": app_data})
 
     def on_connect_click(self, sender, app_data):
-        # Łączymy się tylko, jeśli aktualnie nie jesteśmy połączeni
+        """Connect or disconnect from the ESP32 depending on current state."""
         if not self.is_connected:
             self.connection_state = "connecting"
             self.update_connection_display()
@@ -900,7 +974,12 @@ class GUI:
             self.update_connection_display()
             self.comms_pipe.send({"cmd": "DISCONNECT"})
 
-    def on_step_adjust(self, sender, app_data, user_data):
+    def on_step_adjust(self, user_data):
+        """Adjust the simulated step position for a control action.
+
+        Args:
+            user_data: Tuple of action key and direction.
+        """
         action_key, direction = user_data
         step = 10 * direction
         simulated_key = ""
@@ -921,6 +1000,11 @@ class GUI:
             self.comms_pipe.send({"cmd": "SEND", "value": f"{self.pos_x},{self.pos_y},{self.current_speed},{simulated_key}"})
 
     def on_set_zero(self, sender, app_data, user_data):
+        """Reset the selected control axis to zero.
+
+        Args:
+            user_data: Action key identifying which axis to reset.
+        """
         if user_data == "lpm": self.pos_x = 0
         elif user_data == "ppm": self.pos_y = 0
         elif user_data == "test": self.pos_z = 0
@@ -931,7 +1015,7 @@ class GUI:
             self.comms_pipe.send({"cmd": "SEND", "value": f"{self.pos_x},{self.pos_y},{self.current_speed},"})
 
     def _update_coords_display(self):
-        # Aktualizacja wizualna w interfejsie na obu podstronach (Home i Control Panel)
+        """Refresh all coordinate readouts in the UI."""
         for tag_x in ["coord_x_control", "coord_x_home"]:
             if dpg.does_item_exist(tag_x): dpg.set_value(tag_x, str(self.pos_x))
         for tag_y in ["coord_y_control", "coord_y_home"]:
@@ -939,29 +1023,35 @@ class GUI:
         for tag_z in ["coord_z_control", "coord_z_home"]:
             if dpg.does_item_exist(tag_z): dpg.set_value(tag_z, str(self.pos_z))
 
-    def on_start(self, s, a):
+    def on_start(self):
+        """Start the vision worker."""
         self.pipe.send({"cmd": "START"})
 
-    def on_stop(self, s, a):
+    def on_stop(self):
+        """Stop the vision worker and send an emergency stop to the controller."""
         self.pipe.send({"cmd": "STOP"})
         if self.is_connected:
             self.comms_pipe.send({"cmd": "SEND", "value": f"{self.pos_x},{self.pos_y},{self.current_speed},p"})
             self.add_log("<System> EMERGENCY STOP ACTIVATED", color=[255, 0, 0])
 
-    def on_calibrate(self, s, a):
+    def on_calibrate(self):
+        """Start calibration in the vision worker."""
         self.pipe.send({"cmd": "CALIBRATE"})
 
-    def on_start_sim(self, sender, app_data):
+    def on_start_sim(self):
+        """Request simulation start."""
         self.simulation_state = "starting"
         self.sim_pipe.send({"cmd": "START"})
         self.update_simulation_display()
 
     def on_stop_sim(self, sender, app_data):
+        """Request simulation stop."""
         self.simulation_state = "stopping"
         self.sim_pipe.send({"cmd": "STOP"})
         self.update_simulation_display()
 
     def update_simulation_display(self):
+        """Enable or disable simulation controls based on current state."""
         is_running = self.simulation_state == "running"
         is_pending = self.simulation_state in ("starting", "stopping")
 
@@ -975,6 +1065,7 @@ class GUI:
                 dpg.configure_item(stop_tag, enabled=is_running and not is_pending)
 
     def poll_pipe(self):
+        """Process messages from the worker processes."""
         while self.running:
             while self.pipe.poll():
                 msg = self.pipe.recv()
@@ -1003,7 +1094,6 @@ class GUI:
                     self.update_connection_display()
                 elif msg.get("type") == "keyboard":
                     keys = msg.get("keys")
-                    # Teraz paczka z prędkością idzie ZAWSZE, nawet jak keys jest puste (puszczenie przycisku)
                     self.comms_pipe.send(
                         {"cmd": "SEND", "value": f"{self.pos_x},{self.pos_y},{self.current_speed},{keys}"})
 
@@ -1036,6 +1126,7 @@ class GUI:
                 self.refresh_stats_display()
 
     def run(self):
+        """Show the viewport and enter the main UI loop."""
         dpg.set_primary_window("window_root", True)
         dpg.show_viewport()
 
@@ -1044,7 +1135,6 @@ class GUI:
         while dpg.is_dearpygui_running():
             current_key = ""
 
-            # --- SPRAWDZANIE PRZYCISKÓW GUI (HOLD-TO-MOVE) ---
             if dpg.does_item_exist("btn_left_lpm") and dpg.is_item_active("btn_left_lpm"):
                 current_key = "j"
             elif dpg.does_item_exist("btn_right_lpm") and dpg.is_item_active("btn_right_lpm"):
@@ -1058,23 +1148,19 @@ class GUI:
             elif dpg.does_item_exist("btn_right_test") and dpg.is_item_active("btn_right_test"):
                 current_key = "z"
 
-            # Jeśli nic nie trzyma myszką, sprawdź klawiaturę (pynput)
             if not current_key:
-                # Pobieramy klawisze z KeyboardInputModule (comms_worker przesyła je przez pipe)
-                # Ale dla uproszczenia tutaj skupimy się na priorytecie myszki
+                # Keyboard input is already forwarded by comms_worker; mouse actions take priority here.
                 pass
 
-            # WYSYŁANIE: Tylko gdy stan się zmienił (naciśnięcie lub puszczenie)
             if current_key != last_sent_key:
                 if self.is_connected:
-                    # Format: X,Y,SPEED,KEY
+                    # Protocol: X,Y,SPEED,KEY
                     self.comms_pipe.send({
                         "cmd": "SEND",
                         "value": f"{self.pos_x},{self.pos_y},{self.current_speed},{current_key}"
                     })
                 last_sent_key = current_key
 
-            # Obsługa wizualna menu
             for page_tag, elements in self.nav_elements.items():
                 config = self.nav_config.get(page_tag)
                 if dpg.does_item_exist(elements["btn"]) and dpg.does_item_exist(elements["text"]):
@@ -1093,10 +1179,4 @@ class GUI:
 
 
 if __name__ == "__main__":
-    import multiprocessing
-
-    parent_pipe, child_pipe = multiprocessing.Pipe()
-    parent_comms_pipe, child_comms_pipe = multiprocessing.Pipe()
-    parent_sim_pipe, child_sim_pipe = multiprocessing.Pipe()
-    app_instance = GUI(child_pipe, child_comms_pipe, child_sim_pipe)
-    app_instance.run()
+    print("This module is not meant to be run directly. Please run the main application instead.")

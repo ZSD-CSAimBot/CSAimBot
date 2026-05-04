@@ -1,3 +1,5 @@
+"""Test suite for the application layer."""
+
 import pytest
 import sys
 import numpy as np
@@ -8,14 +10,13 @@ import cv2
 import detection_system.camera as camera
 import detection_system.aimbot as aimbot
 
-
 # ==============================================================================
 # FIXTURES
 # ==============================================================================
 
 @pytest.fixture
 def mock_bettercam():
-    """Mocks the bettercam library for Windows."""
+    """Mock the bettercam library for Windows tests."""
     mock = MagicMock()
     mock.create.return_value = MagicMock()
     with patch.dict("sys.modules", {"bettercam": mock}):
@@ -24,9 +25,7 @@ def mock_bettercam():
 
 @pytest.fixture
 def windows_provider(mock_bettercam):
-    """Provides a CameraProvider in a mocked Windows environment."""
-    # The 'camera' module is already cleanly imported at the top of the file.
-    # Here we temporarily mock the platform during object creation.
+    """Create a CameraProvider instance under a mocked Windows platform."""
     with patch("camera.sys.platform", "win32"):
         provider = camera.CameraProvider(region=(320, 172, 1600, 908))
         yield provider
@@ -34,7 +33,7 @@ def windows_provider(mock_bettercam):
 
 @pytest.fixture
 def mock_mss():
-    """Mocks the mss library for Linux."""
+    """Mock the mss library for Linux tests."""
     mock = MagicMock()
     mock.mss.return_value = MagicMock()
     with patch.dict("sys.modules", {"mss": mock}):
@@ -43,7 +42,7 @@ def mock_mss():
 
 @pytest.fixture
 def linux_provider(mock_mss):
-    """Provides a CameraProvider in a mocked Linux environment."""
+    """Create a CameraProvider instance under a mocked Linux platform."""
     with patch("camera.sys.platform", "linux"):
         provider = camera.CameraProvider(region=(320, 172, 1600, 908))
         yield provider
@@ -51,7 +50,7 @@ def linux_provider(mock_mss):
 
 @pytest.fixture
 def aimbot():
-    """Provides an AimBot instance with mocked camera, YOLO, and PyTorch."""
+    """Create an AimBot instance with mocked camera, model, and tensors."""
     mock_camera = MagicMock()
     mock_yolo_class = MagicMock()
     mock_model_instance = MagicMock()
@@ -71,7 +70,7 @@ def aimbot():
 
 @pytest.fixture
 def gui_app():
-    """Provides a mocked GUI based on DearPyGui."""
+    """Create a GUI instance with Dear PyGui and IPC dependencies mocked."""
     mock_dpg = MagicMock()
     mock_dpg.window.return_value.__enter__ = MagicMock(return_value=None)
     mock_dpg.window.return_value.__exit__ = MagicMock(return_value=False)
@@ -92,6 +91,7 @@ def gui_app():
 # ==============================================================================
 
 class TestCameraProviderWindows:
+    """Tests for the Windows camera backend."""
 
     def test_init_creates_bettercam_with_correct_args(self, mock_bettercam, windows_provider):
         mock_bettercam.create.assert_called_once_with(
@@ -124,6 +124,7 @@ class TestCameraProviderWindows:
 
 
 class TestCameraProviderLinux:
+    """Tests for the Linux camera backend."""
 
     def test_init_sets_monitor_dict(self, linux_provider):
         assert linux_provider.monitor == {
@@ -160,6 +161,7 @@ class TestCameraProviderLinux:
 # ==============================================================================
 
 class TestAimBotInit:
+    """Tests covering AimBot initialization."""
 
     def test_fov_dimensions_set_correctly(self, aimbot):
         assert aimbot.FOV_WIDTH == 1280
@@ -176,6 +178,7 @@ class TestAimBotInit:
 
 
 class TestCaptureAndPreprocessFrame:
+    """Tests for frame capture and preprocessing."""
 
     def test_returns_true_when_frame_available(self, aimbot):
         fake_dl_tensor = MagicMock()
@@ -217,8 +220,10 @@ class TestCaptureAndPreprocessFrame:
 
 
 class TestDisplayResults:
+    """Tests for debug rendering behavior."""
 
     def _make_results(self, boxes_xyxy=None):
+        """Build a minimal YOLO-like results object for display tests."""
         results = [MagicMock()]
         if boxes_xyxy is not None:
             results[0].boxes = MagicMock()
@@ -264,6 +269,7 @@ class TestDisplayResults:
 
 
 class TestProcessSingleFrame:
+    """Tests for the end-to-end frame processing step."""
 
     @patch("detection_system.torch.cuda.synchronize")
     def test_skips_inference_when_no_frame(self, mock_sync, aimbot):
@@ -287,6 +293,7 @@ class TestProcessSingleFrame:
 
 
 class TestAimBotCleanup:
+    """Tests for resource cleanup."""
 
     @patch("detection_system.cv2.destroyAllWindows")
     def test_cleanup_releases_camera_and_destroys_windows(self, mock_destroy, aimbot):
@@ -300,8 +307,10 @@ class TestAimBotCleanup:
 # ==============================================================================
 
 class TestVisionWorker:
+    """Tests for the vision worker process loop."""
 
     def _run_worker(self, messages, mock_aimbot_instance):
+        """Run the worker with a predefined message sequence."""
         from detection_system.aimbot import vision_worker
 
         pipe = MagicMock()
@@ -357,6 +366,7 @@ class TestVisionWorker:
 # ==============================================================================
 
 class TestGUI:
+    """Tests for GUI command forwarding."""
 
     def test_on_start_sends_start_command(self, gui_app):
         gui_app.on_start(None, None)
