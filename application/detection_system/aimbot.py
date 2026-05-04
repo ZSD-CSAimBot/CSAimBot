@@ -37,7 +37,7 @@ class AimBot:
     def allocate_variables(self):
         self.show_debug_window = True
         self.model_tensor = torch.empty((1, 3, self.FOV_HEIGHT, self.FOV_WIDTH), dtype=torch.float16, device="cuda")
-        self.best_target_position = (0.0, 0.0)
+        self.best_target_position = (0, 0)
         self.shoot_threshold = 2
         self.recoil_strength = 5
         self.recoil_control = False
@@ -132,13 +132,14 @@ class AimBot:
 
         if results[0].boxes is not None and len(results[0].boxes) > 0:
             result_tensor = results[0].boxes.data
-            self.best_target_position = self.calculate_best_target_position(result_tensor)
+            result = self.calculate_best_target_position(result_tensor)
+            self.best_target_position = result if result[0] is not None else (0, 0)
 
             if self.show_debug_window:
                 cpu_numpy_data = result_tensor.cpu().numpy()
                 self.display_results(cpu_numpy_data)
         else:
-            self.best_target_position = (None, None)
+            self.best_target_position = (0, 0)
             if self.show_debug_window:
                 self.display_results(None)
     def cleanup(self):
@@ -181,6 +182,12 @@ def vision_worker(pipe_conn, model_path, target_fps):
                     break
 
             if is_running:
+                try:
+                    pipe_conn.send(
+                        {"type": "offsets", "x": aimbot.best_target_position[0], "y": aimbot.best_target_position[1]})
+                except Exception as e:
+                    print(e)
+                    pass
                 start_time = time.perf_counter()
                 aimbot.process_single_frame()
                 elapsed_time = time.perf_counter() - start_time

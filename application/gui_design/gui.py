@@ -978,16 +978,23 @@ class GUI:
         while self.running:
             while self.pipe.poll():
                 msg = self.pipe.recv()
-                if msg.get("type") == "coords":
-                    for axis in ["x", "y", "z"]:
-                        val = str(msg.get(axis))
+                if msg.get("type") == "offsets":
+                    x_val = msg.get("x")
+                    y_val = msg.get("y")
+                    if x_val is None or y_val is None:
+                        continue
+                    for axis, val in [("x", x_val), ("y", y_val)]:
                         tag_control = f"coord_{axis}_control"
                         tag_home = f"coord_{axis}_home"
-
+                        if axis == "x":
+                            self.pos_x = int(val)
+                        elif axis == "y":
+                            self.pos_y = int(val)
                         if dpg.does_item_exist(tag_control):
-                            dpg.set_value(tag_control, val)
+                            dpg.set_value(tag_control, str(val))
                         if dpg.does_item_exist(tag_home):
-                            dpg.set_value(tag_home, val)
+                            dpg.set_value(tag_home, str(val))
+
             while self.comms_pipe.poll():
                 msg = self.comms_pipe.recv()
                 if msg.get("type") == "connection_status":
