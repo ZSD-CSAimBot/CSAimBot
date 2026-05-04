@@ -6,6 +6,7 @@ import random
 import dearpygui.dearpygui as dpg
 import time
 import serial.tools.list_ports
+
 """ !!!! WAŻNE 
 X jest krańcówką PRZY silniku  
 Y jest osią szyny wózka z chwytakiem
@@ -49,7 +50,8 @@ class GUI:
                 "nav_home": "Home Page", "nav_control": "Control Panel", "nav_stat": "Statistics",
                 "nav_settings": "Settings",
                 "start": "START", "cal": "CALIBRATE", "stop": "FORCE STOP",
-                "lang": "Language", "res": "Resolution", "port": "COM Port", "status_ok": "Status: OK","status_err": "Error: ",
+                "lang": "Language", "res": "Resolution", "port": "COM Port", "status_ok": "Status: OK",
+                "status_err": "Error: ",
                 "target": "Target Prioritization:", "logs": "System Logs:", "opencv": "Show OpenCV window",
                 "lpm": "Press LMB", "ppm": "Press RMB", "test": "Gripper Test", "set0": "Set 0",
                 "plot_data": "Data", "plot_vision": "Vision Data", "speed": "Speed",
@@ -70,7 +72,8 @@ class GUI:
                 "nav_home": "Strona Główna", "nav_control": "Panel Sterowania", "nav_stat": "Statystyki",
                 "nav_settings": "Ustawienia",
                 "start": "START", "cal": "KALIBRUJ", "stop": "WYMUŚ STOP",
-                "lang": "Język", "res": "Rozdzielczość", "port": "Port COM", "status_ok": "Status: OK", "status_err": "Błąd: ",
+                "lang": "Język", "res": "Rozdzielczość", "port": "Port COM", "status_ok": "Status: OK",
+                "status_err": "Błąd: ",
                 "target": "Priorytet Celu:", "logs": "Logi Systemowe:", "opencv": "Pokaż okno OpenCV",
                 "lpm": "Wciśnij LPM", "ppm": "Wciśnij PPM", "test": "Test Chwytaka", "set0": "Ustaw 0",
                 "plot_data": "Dane", "plot_vision": "Dane Wizyjne", "speed": "Prędkość",
@@ -285,7 +288,6 @@ class GUI:
             load_and_add("icons/stats/ikona_energy.png", "tex_stat_energy")
             load_and_add("icons/stats/ikona_keys.png", "tex_stat_keys")
 
-
     def toggle_sidebar(self, sender, app_data):
         self.sidebar_expanded = not self.sidebar_expanded
         new_width = 235 if self.sidebar_expanded else 60
@@ -440,6 +442,98 @@ class GUI:
         dpg.bind_item_theme(btn_start_sim, self.green_btn_theme)
         dpg.bind_item_theme(btn_stop_sim, self.red_btn_theme)
 
+    def rescale_ui(self):
+        # Obliczamy współczynnik skali bazując na domyślnej szerokości 1280
+        scale = self.width / 1280.0
+
+        # 1. Skalowanie wszystkich tekstów w aplikacji
+        dpg.set_global_font_scale(scale)
+
+        # 2. Słownik głównych elementów: "TAG_ELEMENTU": (BAZOWA_SZEROKOŚĆ, BAZOWA_WYSOKOŚĆ)
+        # Używamy wymiarów z rozdzielczości 1280x720 jako punktu odniesienia
+        elements = {
+            # Strona Główna (Home)
+            "spacer_home_left": (100, None),
+            "win_home_p1": (520, 300),
+            "win_home_p2": (520, 300),
+            "btn_start_home": (200, 50),
+            "btn_cal_home": (200, 50),
+            "btn_stop_home": (200, 50),
+
+            # Panel Sterowania (Control)
+            "spacer_control_left": (100, None),
+            "win_control_p1": (560, 300),
+            "win_control_logs": (480, 300),
+            "btn_start_control": (200, 50),
+            "btn_cal_control": (200, 50),
+            "btn_stop_control": (200, 50),
+            "btn_lpm_control": (200, 45),
+            "btn_ppm_control": (200, 45),
+            "btn_test_control": (200, 45),
+            "slider_speed_control": (370, None),
+
+            # Ustawienia (Settings)
+            "spacer_settings_left": (310, None),
+            "win_set_lang": (600, 50),
+            "win_set_res": (600, 50),
+            "win_set_port": (600, 50),
+
+            # Statystyki (Stats)
+            "spacer_stats_left": (90, None)
+        }
+
+        # Automatyczne aktualizowanie wymiarów
+        for tag, (w, h) in elements.items():
+            if dpg.does_item_exist(tag):
+                if w is not None and h is not None:
+                    dpg.configure_item(tag, width=int(w * scale), height=int(h * scale))
+                elif w is not None:
+                    dpg.configure_item(tag, width=int(w * scale))
+                elif h is not None:
+                    dpg.configure_item(tag, height=int(h * scale))
+
+        # 3. Ręczne skalowanie pozycjonowania (ComboBoxy w zakładce Settings)
+        for combo_tag in ["combo_lang", "combo_res", "combo_port"]:
+            if dpg.does_item_exist(combo_tag):
+                dpg.configure_item(combo_tag, pos=[int(400 * scale), int(13 * scale)], width=int(180 * scale))
+
+        # 4. Skalowanie kart w zakładce Statystyk
+        card_data = ["lmb", "rmb", "time", "mouse", "dist", "energy", "unknown", "keys"]
+        for c_id in card_data:
+            win_tag = f"win_stat_{c_id}"
+            val_tag = f"stat_val_{c_id}"
+            if dpg.does_item_exist(win_tag):
+                dpg.configure_item(win_tag, width=int(255 * scale), height=int(295 * scale))
+            if dpg.does_item_exist(val_tag):
+                dpg.configure_item(val_tag, width=int(225 * scale), height=int(45 * scale))
+
+    def on_resolution_change(self, sender, app_data):
+        # app_data zawiera wybraną opcję, np. "1920x1080"
+        res_x, res_y = app_data.split('x')
+        self.width = int(res_x)
+        self.height = int(res_y)
+
+        # Aktualizacja rozmiaru głównego okna systemu (viewport)
+        dpg.configure_viewport(0, width=self.width, height=self.height)
+
+        # Aktualizacja rozmiarów elementów wewnątrz DearPyGui
+        if dpg.does_item_exist("window_root"):
+            dpg.configure_item("window_root", width=self.width, height=self.height)
+        if dpg.does_item_exist("window_dim"):
+            dpg.configure_item("window_dim", width=self.width, height=self.height)
+        if dpg.does_item_exist("btn_dim_bg"):
+            dpg.configure_item("btn_dim_bg", width=self.width, height=self.height)
+        if dpg.does_item_exist("window_sidebar"):
+            dpg.configure_item("window_sidebar", height=self.height)
+        if dpg.does_item_exist("sidebar_child"):
+            dpg.configure_item("sidebar_child", height=self.height)
+
+        # Opcjonalnie: Poinformuj system wizyjny o zmianie rozdzielczości
+        self.pipe.send({"cmd": "SET_RESOLUTION", "width": self.width, "height": self.height})
+
+        # Wywołaj przeskalowanie elementów wewnętrznych!
+        self.rescale_ui()
+
     def build_ui(self):
         dpg.bind_theme(self.global_theme)
         with dpg.window(tag="window_root", width=self.width, height=self.height, no_title_bar=True, no_resize=True,
@@ -449,10 +543,10 @@ class GUI:
             with dpg.group(tag="page_home", show=True):
                 dpg.add_spacer(height=30)
                 with dpg.group(horizontal=True):
-                    dpg.add_spacer(width=100)
+                    dpg.add_spacer(width=100, tag="spacer_home_left")
                     with dpg.group():
                         with dpg.group(horizontal=True):
-                            with dpg.child_window(width=520, height=300):
+                            with dpg.child_window(width=520, height=300, tag="win_home_p1"):
                                 with dpg.plot(label="Dane", width=-1, height=-1, tag="plot_home_1"):
                                     dpg.add_plot_axis(dpg.mvXAxis, tag="home_plot1_x")
                                     dpg.add_plot_axis(dpg.mvYAxis, tag="home_plot1_y")
@@ -465,7 +559,7 @@ class GUI:
 
                             dpg.add_spacer(width=20)
 
-                            with dpg.child_window(width=520, height=300):
+                            with dpg.child_window(width=520, height=300, tag="win_home_p2"):
                                 with dpg.plot(label="Dane", width=-1, height=-1, tag="plot_home_2"):
                                     dpg.add_plot_axis(dpg.mvXAxis, tag="home_plot2_x")
                                     dpg.add_plot_axis(dpg.mvYAxis, tag="home_plot2_y")
@@ -551,17 +645,17 @@ class GUI:
             with dpg.group(tag="page_control", show=False):
                 dpg.add_spacer(height=30)
                 with dpg.group(horizontal=True):
-                    dpg.add_spacer(width=100)
+                    dpg.add_spacer(width=100, tag="spacer_control_left")
                     with dpg.group():
                         with dpg.group(horizontal=True):
-                            with dpg.child_window(width=560, height=300):
+                            with dpg.child_window(width=560, height=300, tag="win_control_p1"):
                                 with dpg.plot(label="Dane Wizyjne", width=-1, height=-1, tag="plot_control"):
                                     dpg.add_plot_axis(dpg.mvXAxis, tag="control_plot_x")
                                     dpg.add_plot_axis(dpg.mvYAxis, tag="control_plot_y")
                                     dpg.add_line_series(list(range(100)), [math.cos(x / 10) for x in range(100)],
                                                         parent="control_plot_y")
                             dpg.add_spacer(width=20)
-                            with dpg.child_window(width=480, height=300):
+                            with dpg.child_window(width=480, height=300, tag="win_control_logs"):
                                 dpg.add_spacer(height=10)
                                 with dpg.group(horizontal=True):
                                     dpg.add_spacer(width=10)
@@ -597,6 +691,7 @@ class GUI:
                                     items=["ALL", "TT", "CT"],
                                     default_value="ALL",
                                     horizontal=True,
+                                    tag="rbtn_target_control",
                                     callback=self.on_target_change
                                 )
                                 dpg.bind_item_theme(self.rbtn_target, self.violet_rbtn_theme)
@@ -605,6 +700,7 @@ class GUI:
                                 self.chk_debug = dpg.add_checkbox(
                                     label="Show OpenCV window",
                                     default_value=True,
+                                    tag="chk_debug_control",
                                     callback=self.on_debug_toggle
                                 )
 
@@ -653,7 +749,9 @@ class GUI:
                                         txt_speed = dpg.add_text("Speed: 75%", tag="speed_text_label_control")
                                         dpg.bind_item_theme(txt_speed, self.white_text_theme)
 
-                                        slider_speed = dpg.add_slider_int(width=370, default_value=75, format="", tag="slider_speed_control", callback=self.on_speed_change_control)
+                                        slider_speed = dpg.add_slider_int(width=370, default_value=75, format="",
+                                                                          tag="slider_speed_control",
+                                                                          callback=self.on_speed_change_control)
                                         dpg.bind_item_theme(slider_speed, self.slider_theme)
 
                             dpg.add_spacer(width=40)
@@ -661,7 +759,7 @@ class GUI:
                             with dpg.group():
                                 with dpg.child_window(width=280, height=165):
                                     dpg.add_spacer(height=16)
-                                    axes    = ["X", "Y", "Z"]
+                                    axes = ["X", "Y", "Z"]
                                     for axis in axes:
                                         with dpg.group(horizontal=True):
                                             dpg.add_spacer(width=40)
@@ -677,27 +775,32 @@ class GUI:
             with dpg.group(tag="page_settings", show=False):
                 dpg.add_spacer(height=60)
                 with dpg.group(horizontal=True):
-                    dpg.add_spacer(width=310)
+                    dpg.add_spacer(width=310, tag="spacer_settings_left")
 
                     with dpg.group():
-                        with dpg.child_window(width=600, height=50, no_scrollbar=True) as row_lang:
+                        with dpg.child_window(width=600, height=50, no_scrollbar=True, tag="win_set_lang") as row_lang:
                             txt_lang = dpg.add_text("Language", tag="txt_lang", pos=[20, 13])
                             dpg.bind_item_theme(txt_lang, self.white_text_theme)
                             # combo box sztywno przypięty na osi X (400px), niezależnie od tekstu!
-                            combo_lang = dpg.add_combo(items=["English", "Polski"], default_value="English", width=180, pos=[400, 13], callback=self.on_language_change)
+                            combo_lang = dpg.add_combo(items=["English", "Polski"], default_value="English", width=180,
+                                                       pos=[400, 13], callback=self.on_language_change,
+                                                       tag="combo_lang")
                             dpg.bind_item_theme(combo_lang, self.gold_combo_theme)
                         dpg.bind_item_theme(row_lang, self.settings_row_theme)
                         dpg.add_spacer(height=10)
 
-                        with dpg.child_window(width=600, height=50, no_scrollbar=True) as row_res:
+                        with dpg.child_window(width=600, height=50, no_scrollbar=True, tag="win_set_res") as row_res:
                             txt_res = dpg.add_text("Resolution", tag="txt_res", pos=[20, 13])
                             dpg.bind_item_theme(txt_res, self.white_text_theme)
-                            combo_res = dpg.add_combo(items=["1280x720", "1920x1080"], default_value="1280x720", width=180, pos=[400, 13])
+                            combo_res = dpg.add_combo(items=["1280x720", "1920x1080"],
+                                                      default_value=f"{self.width}x{self.height}", width=180,
+                                                      pos=[400, 13], tag="combo_res",
+                                                      callback=self.on_resolution_change)
                             dpg.bind_item_theme(combo_res, self.gold_combo_theme)
                         dpg.bind_item_theme(row_res, self.settings_row_theme)
                         dpg.add_spacer(height=10)
 
-                        with dpg.child_window(width=600, height=50, no_scrollbar=True) as row_port:
+                        with dpg.child_window(width=600, height=50, no_scrollbar=True, tag="win_set_port") as row_port:
                             txt_port = dpg.add_text("COM Port", tag="txt_port", pos=[20, 13])
                             dpg.bind_item_theme(txt_port, self.white_text_theme)
 
@@ -707,7 +810,8 @@ class GUI:
                                 available_ports = ["COM3"]  # Fallback
 
                             combo_port = dpg.add_combo(items=available_ports, default_value=available_ports[0],
-                                                       width=180, pos=[400, 13], callback=self.on_port_change)
+                                                       width=180, pos=[400, 13], callback=self.on_port_change,
+                                                       tag="combo_port")
                             dpg.bind_item_theme(combo_port, self.gold_combo_theme)
                         dpg.bind_item_theme(row_port, self.settings_row_theme)
                         dpg.add_spacer(height=10)
@@ -729,14 +833,14 @@ class GUI:
                 ]
 
                 with dpg.group(horizontal=True):
-                    dpg.add_spacer(width=90)
+                    dpg.add_spacer(width=90, tag="spacer_stats_left")
                     with dpg.group():
                         for row in range(2):
                             with dpg.group(horizontal=True):
                                 for col in range(4):
                                     idx = row * 4 + col
                                     c_id, c_tex = card_data[idx]
-                                    with dpg.child_window(width=255, height=295) as card_win:
+                                    with dpg.child_window(width=255, height=295, tag=f"win_stat_{c_id}") as card_win:
                                         dpg.add_spacer(height=5)
                                         if c_tex:
                                             with dpg.group(horizontal=True):
@@ -770,7 +874,8 @@ class GUI:
         with dpg.window(tag="window_dim", width=self.width, height=self.height, pos=(0, 0), no_title_bar=True,
                         no_resize=True, no_move=True, show=False):
             dpg.bind_item_theme("window_dim", self.dim_theme)
-            dpg.add_button(width=self.width, height=self.height, callback=self.toggle_sidebar)
+            # Dodano tag="btn_dim_bg"
+            dpg.add_button(width=self.width, height=self.height, callback=self.toggle_sidebar, tag="btn_dim_bg")
             dpg.bind_item_theme(dpg.last_item(), self.invisible_btn_theme)
 
         with dpg.window(tag="window_sidebar", width=60, height=self.height, pos=(0, 0), no_title_bar=True,
@@ -830,16 +935,16 @@ class GUI:
 
                 with dpg.group(horizontal=True, tag="group_conn_icon", show=True):
                     self.btn_connect_icon = dpg.add_image_button(texture_tag=tex_icon, width=50, height=50, indent=2,
-                                                           callback=self.on_connect_click) # Dodaj to
+                                                                 callback=self.on_connect_click)  # Dodaj to
                     dpg.bind_item_theme(self.btn_connect_icon, self.transparent_btn_theme)
 
                 with dpg.group(horizontal=True, tag="group_conn_full", show=False):
                     self.btn_connect_full = dpg.add_image_button(texture_tag=tex_full, width=220, height=50, indent=2,
-                                                           callback=self.on_connect_click) # Dodaj to
+                                                                 callback=self.on_connect_click)  # Dodaj to
                     dpg.bind_item_theme(self.btn_connect_full, self.transparent_btn_theme)
 
     def on_speed_change_control(self, sender, app_data):
-        self.current_speed = int(app_data) # DODANE: Zapisz aktualną wartość slidera
+        self.current_speed = int(app_data)  # DODANE: Zapisz aktualną wartość slidera
         t = self.lang_dict[self.current_lang]
         dpg.set_value("speed_text_label_control", f"{t['speed']}: {app_data}%")
 
@@ -918,12 +1023,16 @@ class GUI:
         self._update_coords_display()
 
         if self.is_connected:
-            self.comms_pipe.send({"cmd": "SEND", "value": f"{self.pos_x},{self.pos_y},{self.current_speed},{simulated_key}"})
+            self.comms_pipe.send(
+                {"cmd": "SEND", "value": f"{self.pos_x},{self.pos_y},{self.current_speed},{simulated_key}"})
 
     def on_set_zero(self, sender, app_data, user_data):
-        if user_data == "lpm": self.pos_x = 0
-        elif user_data == "ppm": self.pos_y = 0
-        elif user_data == "test": self.pos_z = 0
+        if user_data == "lpm":
+            self.pos_x = 0
+        elif user_data == "ppm":
+            self.pos_y = 0
+        elif user_data == "test":
+            self.pos_z = 0
 
         self._update_coords_display()
 
