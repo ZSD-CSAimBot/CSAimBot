@@ -1,10 +1,18 @@
+"""Small utility script for exercising the statistics manager."""
+
 import time
 import random
 
 from utils.json_utils import StatsManager
 
+
 def print_stats(sm: StatsManager):
-    print("\n--- Aktualne statystyki ---")
+    """Print the current statistics in a readable format.
+
+    Args:
+        sm: Stats manager instance used to read and format values.
+    """
+    print("\n--- Current statistics ---")
     for key in StatsManager.DEFAULTS:
         raw = sm.get(key)
         formatted = StatsManager.format_value(key, raw)
@@ -13,13 +21,14 @@ def print_stats(sm: StatsManager):
 
 
 def main():
+    """Run a small demo that updates and prints stored statistics."""
     sm = StatsManager()
-    print(f"Plik stats.json: {sm.path}")
+    print(f"stats.json file: {sm.path}")
     print_stats(sm)
 
     rounds = 10
     for i in range(1, rounds + 1):
-        print(f"\n[Runda {i}/{rounds}]")
+        print(f"\n[Round {i}/{rounds}]")
 
         sm.increment("lmb", random.randint(1, 5))
         sm.increment("rmb", random.randint(0, 2))
@@ -34,7 +43,7 @@ def main():
         print_stats(sm)
         time.sleep(1)
 
-    print("\nGotowe. Dane zapisane w:", sm.path)
+    print("\nDone. Data saved in:", sm.path)
 
 
 if __name__ == "__main__":

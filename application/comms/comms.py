@@ -1,17 +1,31 @@
+"""
+ESP32 Serial Communications Module
+
+Provides serial communication interface and keyboard input handling for the CSAimBot
+robot control system. Facilitates bidirectional communication with the ESP32 microcontroller
+and captures keyboard input for device operation.
+"""
+
 import platform
-import socket
-import threading
 import time
-#import keyboard
 from pynput import keyboard as pynput_kb
 import serial
-import sys
-import os
 
 
 class SerialCommsModule:
-    # Constructor
+    """
+    This class manages serial communication with the ESP32 microcontroller.
+    It provides methods to connect, send commands, receive responses, and disconnect.
+    """
     def __init__(self, port=None, baud_rate=115200, timeout=2):
+        """
+        Initialize serial communication module with platform-specific default port.
+        
+        Args:
+            port: Serial port name (auto-detected if None)
+            baud_rate: Communication speed in bits/second (default: 115200)
+            timeout: Read timeout in seconds (default: 2)
+        """
         if port is None:
             currentSystem = platform.system()
             if currentSystem == "Windows":
@@ -26,43 +40,48 @@ class SerialCommsModule:
         self.timeout = timeout
         self.esp = None
 
-    # Try to connect with esp
     def connect(self):
+        """
+        Tries to establish a serial connection with the ESP32.
+        Returns True if successful, False otherwise.
+        """
         try:
-            # 1. Tworzymy pusty obiekt (NIE OTWIERAMY GO W KONSTRUKTORZE)
             self.esp = serial.Serial()
             self.esp.port = self.port
             self.esp.baudrate = self.baud_rate
             self.esp.timeout = self.timeout
-
-            # 2. KLUCZOWE DLA ESP32-S3: Blokujemy sygnały resetujące z PC
             self.esp.dtr = False
             self.esp.rts = False
-
-            # 3. Dopiero teraz bezpiecznie otwieramy port
             self.esp.open()
             print(f"Connected on {self.port}.")
-
-            # Dajemy Windowsowi i ESP czas na stabilizację bez resetu
             time.sleep(1)
             return True
         except serial.SerialException as e:
             print(f"Connection error {self.port}\n{e}")
             return False
 
-    # Encodes command and sends it to esp
     def send_command(self, command):
+        """
+        Encode and send command to ESP32. Appends carriage return for protocol.
+        
+        Args:
+            command: Command string to send
+        """
         if self.esp and self.esp.is_open:
-            # Upewniamy się, że nie kasujemy bufora wejściowego!
             text_to_send = f"{command}\r".encode('utf-8')
             self.esp.write(text_to_send)
-            self.esp.flush()  # Wait until all data is sent
+            self.esp.flush()
             print(f"Sent: {command}")
         else:
             print("Port closed. Unable to send command.")
 
-    # Tries to read response from esp, returns None if no response
     def get_response(self):
+        """
+        Read response from ESP32.
+        
+        Returns:
+            Response string if available, None otherwise
+        """
         if self.esp and self.esp.is_open:
             response = self.esp.readline().decode('utf-8', errors='ignore').strip()
             if response:
@@ -72,8 +91,8 @@ class SerialCommsModule:
             print("Port closed. Unable to read response.")
             return None
 
-    # Closes the port if it's open
     def disconnect(self):
+        """Close the serial port if open."""
         if self.esp and self.esp.is_open:
             self.esp.close()
             print("Port closed successfully.")
@@ -82,16 +101,23 @@ class SerialCommsModule:
 
 
 def comms_worker(conn):
+    """
+    Manage multiprocess communication between GUI, ESP32, and keyboard input.
+    
+    Runs in a separate process and handles command dispatch to ESP32,
+    response reception, and keyboard state transmission back to GUI.
+    
+    Args:
+        conn: multiprocessing.Connection object for IPC
+    """
     esp = SerialCommsModule()
     keyboard = KeyboardInputModule()
     last_keys = None
     last_send_time = 0.0
-
-    is_connected = False # Ustawiamy na False na start
-
+    is_connected = False
     running = True
+
     while running:
-        # 1. Nasłuchiwanie komend z GUI
         while conn.poll():
             msg = conn.recv()
             if msg.get("cmd") == "QUIT":
@@ -111,24 +137,18 @@ def comms_worker(conn):
                 is_connected = False
                 esp.port = msg.get("value")
                 conn.send({"type": "connection_status", "status": "disconnected"})
-
-        # 2. ODCZYT Z ESP32
         try:
-            # Używamy esp.esp.in_waiting, aby sprawdzić, czy są dane bez blokowania pętli
             if is_connected and esp.esp and esp.esp.in_waiting > 0:
                 response = esp.get_response()
                 print(f"Received from ESP: {response}")
                 if response:
-                    # Odsyłamy wiadomość do GUI do wyświetlenia w logach
                     conn.send({"type": "esp_msg", "value": response})
         except Exception as e:
-            # Przechwytujemy zerwanie portu przez zakłócenia EMI z solenoidu
-            print(f"<System> Zerwano połączenie USB (skok napięcia/EMI?): {e}")
+            print(f"<System> USB connection error: {e}")
             esp.disconnect()
             is_connected = False
             conn.send({"type": "connection_status", "status": "disconnected"})
 
-        # 3. Wysyłanie stanu klawiatury do GUI
         keys = keyboard.get_key()
         current_time = time.time()
         if keys != last_keys or (keys and current_time - last_send_time > 0.1):
@@ -138,157 +158,24 @@ def comms_worker(conn):
         time.sleep(0.01)
 
 
-class TCPCommsModule:
-    # Constructor
-    def __init__(self, host="127.0.0.1", port=5000, timeout=2):
-        self.host = host
-        self.port = port
-        self.timeout = timeout
-        self.socket = None
-
-    # Try to connect with TCP server
-    def connect(self):
-        try:
-            self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.socket.settimeout(self.timeout)
-            self.socket.connect((self.host, self.port))
-            print(f"Connected to {self.host}:{self.port}.")
-            return True
-        except socket.error as e:
-            print(f"Connection error {self.host}:{self.port}\n{e}")
-            self.socket = None
-            return False
-
-    # Encodes command and sends it to esp
-    def send_command(self, command):
-        if self.esp and self.esp.is_open:
-            # REMOVED: self.esp.reset_input_buffer() - This was deleting incoming messages!
-            text_to_send = f"{command}\r".encode('utf-8')
-            self.esp.write(text_to_send)
-            self.esp.flush()  # Wait until all data is sent
-            print(f"Sent: {command}")
-        else:
-            print("Port closed. Unable to send command.")
-
-    # Tries to read response from server
-    def get_response(self):
-        if self.socket:
-            try:
-                response = self.socket.recv(1024).decode('utf-8', errors='ignore').strip()
-                if response:
-                    return response
-                return None
-            except socket.timeout:
-                print("Socket timeout.")
-                return None
-            except socket.error as e:
-                print(f"Receive error: {e}")
-                return None
-        else:
-            print("Socket not connected.")
-            return None
-
-    # Closes the socket if it's open
-    def disconnect(self):
-        if self.socket:
-            try:
-                self.socket.close()
-                print("Socket closed.")
-            except socket.error as e:
-                print(f"Error closing socket: {e}")
-            finally:
-                self.socket = None
-        else:
-            print("Socket already closed or not opened.")
-
-
-class TCPServer:
-    # on_received_message is a callback function that takes a message as input
-    # it has to be written in code that will use this module (or not)
-    def __init__(self, host="127.0.0.1", port=5000, on_received_message=None):
-        self.host = host
-        self.port = port
-        self.server_socket = None
-        self.running = False
-        self.on_received_message = on_received_message
-
-    def start(self):
-        try:
-            self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            self.server_socket.bind((self.host, self.port))
-            self.server_socket.listen(5)
-            self.running = True
-            print(f"TCP Server started on {self.host}:{self.port}")
-
-            # Accept connections in a separate thread
-            server_thread = threading.Thread(target=self.accept_connection, daemon=True)
-            server_thread.start()
-        except socket.error as e:
-            print(f"Error starting server: {e}")
-            self.running = False
-
-    def accept_connection(self):
-        while self.running:
-            try:
-                client_socket, client_address = self.server_socket.accept()
-                print(f"Client connected: {client_address}")
-
-                # Handle client in a separate thread
-                client_thread = threading.Thread(
-                    target=self.handle_client,
-                    args=(client_socket, client_address),
-                    daemon=True
-                )
-                client_thread.start()
-            except socket.error as e:
-                if self.running:
-                    print(f"Error accepting connection: {e}")
-                break
-
-    def handle_client(self, client_socket, client_address):
-        try:
-            while self.running:
-                data = client_socket.recv(1024)
-                if not data:
-                    break
-                message = data.decode('utf-8', errors='ignore').strip()
-                print(f"[{client_address}] Received: {message}")
-
-                if self.on_received_message:
-                    response = self.on_received_message(message)
-                    if response:
-                        client_socket.sendall(response.encode('utf-8'))
-                else:
-                    # Echo back the message
-                    response = f"Echo: {message}\r\n"
-                    client_socket.sendall(response.encode('utf-8'))
-                    print(f"[{client_address}] Sent: {response.strip()}")
-
-        except socket.error as e:
-            print(f"Error handling client {client_address}: {e}")
-        finally:
-            client_socket.close()
-            print(f"Client disconnected: {client_address}")
-
-    def stop(self):
-        self.running = False
-        if self.server_socket:
-            try:
-                self.server_socket.close()
-                print("TCP Server stopped.")
-            except socket.error as e:
-                print(f"Error stopping server: {e}")
-
-
 class KeyboardInputModule:
+    """
+    Keyboard input listener using pynput library.
+    
+    Tracks specific keys for device control and an emergency stop key.
+    Runs a background listener thread to capture key events.
+    """
     def __init__(self, tracked_keys=None, estop_key="p"):
-        # DODANO 'h' DO LISTY
+        """
+        Initialize keyboard listener.
+        
+        Args:
+            tracked_keys: List of keys to monitor (default: movement and control keys)
+            estop_key: Emergency stop key character (default: 'p')
+        """
         self.tracked_keys = tracked_keys or ['i', 'j', 'k', 'l', 'z', 'x', 'v', '1', '2', 'h']
         self.estop_key = estop_key
         self.pressed_keys = set()
-
-        # Uruchomienie bezpiecznego nasłuchiwania w tle (pynput)
         self.listener = pynput_kb.Listener(
             on_press=self.on_press,
             on_release=self.on_release
@@ -296,15 +183,26 @@ class KeyboardInputModule:
         self.listener.start()
 
     def on_press(self, key):
+        """
+        Handle key press event. Add to pressed_keys set if tracked or estop.
+        
+        Args:
+            key: pynput Key object from listener
+        """
         try:
             char = key.char.lower()
             if char in self.tracked_keys or char == self.estop_key:
                 self.pressed_keys.add(char)
         except AttributeError:
-            # Ignoruj klawisze funkcyjne (shift, ctrl, alt)
             pass
 
     def on_release(self, key):
+        """
+        Handle key release event. Remove from pressed_keys set.
+        
+        Args:
+            key: pynput Key object from listener
+        """
         try:
             char = key.char.lower()
             if char in self.pressed_keys:
@@ -313,11 +211,14 @@ class KeyboardInputModule:
             pass
 
     def get_key(self):
-        # E-stop zawsze ma najwyższy priorytet
+        """
+        Get current keyboard state.
+        
+        Returns:
+            Emergency stop key if pressed, otherwise string of all active tracked keys
+        """
         if self.estop_key in self.pressed_keys:
             return self.estop_key
-
-        # Zwróć wszystkie wciśnięte klawisze w formie stringa (np. "ij")
         result = ""
         for k in self.tracked_keys:
             if k in self.pressed_keys:
@@ -325,99 +226,5 @@ class KeyboardInputModule:
         return result
 
 
-def run_benchmark():
-    esp = SerialCommsModule()
-
-    if not esp.connect():
-        print("Nie można nawiązać połączenia. Przerwanie testu.")
-        return
-
-    print("Czekam 2 sekundy na inicjalizację mikrokontrolera...")
-    time.sleep(2)
-
-    if esp.esp.in_waiting > 0:
-        esp.esp.read(esp.esp.in_waiting)
-
-    iterations = 10000
-    lost_packets = 0
-    latencies = []
-
-    print(f"\nRozpoczynam test pingu ({iterations} iteracji).")
-    print("UWAGA: Przez najbliższe kilka sekund konsola będzie wyciszona, aby nie opóźniać testu.\nCzekaj...")
-
-    # Zapisanie oryginalnego wyjścia (stdout) i przekierowanie go do "kosza", żeby printy nie psuły pingu
-    original_stdout = sys.stdout
-    sys.stdout = open(os.devnull, 'w')
-
-    for i in range(iterations):
-        # Było: payload = f"{i},{i},ij"
-        payload = f"{i},{i},75,ij"  # Dodane statyczne 75 dla testu
-
-        # Mierzymy czas w nanosekundach dla maksymalnej precyzji
-        start_time = time.perf_counter()
-
-        esp.send_command(payload)
-        response = esp.get_response()
-
-        end_time = time.perf_counter()
-
-        # Weryfikacja: Twoje ESP powinno odesłać "Zrozumialem X: ... Y: ... Keys: ..."
-        if response is None or not response.startswith("Zrozumialem"):
-            lost_packets += 1
-        else:
-            # Obliczamy Round-Trip Time (RTT) w milisekundach
-            latency_ms = (end_time - start_time) * 1000
-            latencies.append(latency_ms)
-
-    # Przywrócenie standardowego wyświetlania w konsoli
-    sys.stdout.close()
-    sys.stdout = original_stdout
-
-    esp.disconnect()
-
-    # --- ANALIZA WYNIKÓW ---
-    if len(latencies) > 0:
-        avg_latency = sum(latencies) / len(latencies)
-        max_latency = max(latencies)
-        min_latency = min(latencies)
-    else:
-        avg_latency = max_latency = min_latency = 0
-
-    packet_loss_pct = (lost_packets / iterations) * 100
-
-    # Prędkość z komputera do ESP to w teorii połowa całkowitego czasu odpowiedzi (RTT / 2)
-    one_way_latency = avg_latency / 2
-
-    # Sprawdzenie, czy parametry zdają test
-    latency_passed = one_way_latency < 5.0
-    loss_passed = packet_loss_pct < 0.5  # Próg tolerancji dla ułamków promila (zgubienie paru na 10000 jest akceptowalne)
-
-    print("\n" + "=" * 40)
-    print("           RAPORT Z BENCHMARKU")
-    print("=" * 40)
-
-    print("\n[ Czas reakcji (Round-Trip Time) ]")
-    print(f"  • Średni czas całej pętli: {avg_latency:.2f} ms")
-    print(f"  • Najszybsza odpowiedź:    {min_latency:.2f} ms")
-    print(f"  • Najwolniejsza odpowiedź: {max_latency:.2f} ms")
-
-    print("\n[ Stabilność transmisji ]")
-    print(f"  • Ilość zgubionych ramek:  {lost_packets} z {iterations}")
-    print(f"  • Procent strat:           {packet_loss_pct:.3f}%")
-
-    print("\n" + "=" * 40)
-    print("         WERYFIKACJA WYMAGAŃ")
-    print("=" * 40)
-
-    print(f"1. Opóźnienie na linii PC -> ESP < 5 ms: ")
-    print(f"   Szacowane na podstawie średniej: {one_way_latency:.2f} ms")
-    print(f"   Status: {'ZALICZONE' if latency_passed else 'NIEZALICZONE'}")
-
-    print(f"\n2. Zgubione ramki na poziomie ~0%: ")
-    print(f"   Odnotowano: {packet_loss_pct:.3f}%")
-    print(f"   Status: {'ZALICZONE' if loss_passed else 'NIEZALICZONE'}")
-    print("=" * 40)
-
-
 if __name__ == "__main__":
-    run_benchmark()
+    print("This module is not meant to be run directly. Please run the main application instead.")
