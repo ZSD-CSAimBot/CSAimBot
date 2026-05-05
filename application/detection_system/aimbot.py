@@ -40,7 +40,8 @@ class AimBot:
         self.debug_frame = None
     
     def prepare_model(self, model_path):
-        """Load the YOLO model and run a CUDA warm-up pass.
+        """
+        Load the YOLO model and run a CUDA warm-up pass.
 
         Args:
             model_path: Path to the YOLO model weights.
@@ -74,7 +75,8 @@ class AimBot:
         return False
 
     def recoil_compensation(self, offset_x, offset_y):
-        """Apply a small vertical correction while recoil control is enabled.
+        """
+        Apply a small vertical correction while recoil control is enabled.
 
         Args:
             offset_x: Horizontal offset from screen center.
@@ -88,8 +90,23 @@ class AimBot:
                 offset_y += self.recoil_strength
         return offset_x, offset_y
     
+    def update_recoil_state(self, boxes_data_tensor):
+        """
+        Check if the current detections include the rifle class to determine if recoil control should be active.
+            
+        Args:
+            boxes_data_tensor: Tensor of detections in xyxy format with class ids.
+        """
+        if boxes_data_tensor is None or boxes_data_tensor.shape[0] == 0:
+            return False
+
+        cls = boxes_data_tensor[:, 5]
+        rifle_class_id = 3
+        return (cls == rifle_class_id).any().item()
+
     def calculate_best_target_position(self, boxes_data_tensor):
-        """Select the nearest valid detection and return its offset from screen center.
+        """
+        Select the nearest valid detection and return its offset from screen center.
 
         Args:
             boxes_data_tensor: Tensor of detections in xyxy format with class ids.
@@ -165,6 +182,7 @@ class AimBot:
 
         if results[0].boxes is not None and len(results[0].boxes) > 0:
             result_tensor = results[0].boxes.data
+            self.recoil_control = self.update_recoil_state(result_tensor)
             result = self.calculate_best_target_position(result_tensor)
             self.best_target_position = result if result[0] is not None else (0, 0)
 
@@ -172,6 +190,7 @@ class AimBot:
                 cpu_numpy_data = result_tensor.cpu().numpy()
                 self.display_results(cpu_numpy_data)
         else:
+            self.recoil_control = False
             self.best_target_position = (0, 0)
             if self.show_debug_window:
                 self.display_results(None)
