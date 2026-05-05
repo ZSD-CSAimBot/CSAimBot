@@ -1118,7 +1118,19 @@ class GUI:
                         tag = f"stat_val_{key}"
                         if dpg.does_item_exist(tag):
                             dpg.configure_item(tag, label=StatsManager.format_value(key, self.stats_manager.get(key)))
-                time.sleep(0.01)
+            while self.sim_pipe.poll():
+                msg = self.sim_pipe.recv()
+                if msg.get("type") == "simulation_status":
+                    self.simulation_state = msg.get("status", "stopped")
+                    message = msg.get("message")
+                    if message:
+                        color = [80, 255, 80] if self.simulation_state == "running" else [255, 255, 80]
+                        if "error" in message.lower() or "not found" in message.lower():
+                            color = [255, 80, 80]
+                        self.add_log(message, color)
+                    self.update_simulation_display()
+                
+            time.sleep(0.01)
 
             now = time.time()
             if now - self._last_stats_refresh >= 5:
