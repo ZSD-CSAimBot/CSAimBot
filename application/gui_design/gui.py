@@ -1078,9 +1078,9 @@ class GUI:
                         tag_control = f"coord_{axis}_control"
                         tag_home = f"coord_{axis}_home"
                         if axis == "x":
-                            self.pos_x = int(val)
+                            self.pos_x = val
                         elif axis == "y":
-                            self.pos_y = int(val)
+                            self.pos_y = val
                         if dpg.does_item_exist(tag_control):
                             dpg.set_value(tag_control, str(val))
                         if dpg.does_item_exist(tag_home):
