@@ -17,14 +17,14 @@ class SerialCommsModule:
     This class manages serial communication with the ESP32 microcontroller.
     It provides methods to connect, send commands, receive responses, and disconnect.
     """
-    def __init__(self, port=None, baud_rate=115200, timeout=2):
+    def __init__(self, port=None, baud_rate=115200, timeout=0.1):
         """
         Initialize serial communication module with platform-specific default port.
         
         Args:
             port: Serial port name (auto-detected if None)
             baud_rate: Communication speed in bits/second (default: 115200)
-            timeout: Read timeout in seconds (default: 2)
+            timeout: Read timeout in seconds (default: 0.1 for non-blocking reads)
         """
         if port is None:
             currentSystem = platform.system()
@@ -50,10 +50,14 @@ class SerialCommsModule:
             self.esp.port = self.port
             self.esp.baudrate = self.baud_rate
             self.esp.timeout = self.timeout
+            self.esp.write_timeout = 1
             self.esp.dtr = False
             self.esp.rts = False
             self.esp.open()
             print(f"Connected on {self.port}.")
+            # Czyszczenie bufora po połączeniu
+            self.esp.reset_input_buffer()
+            self.esp.reset_output_buffer()
             time.sleep(1)
             return True
         except serial.SerialException as e:
@@ -77,16 +81,22 @@ class SerialCommsModule:
 
     def get_response(self):
         """
-        Read response from ESP32.
-        
+        Read response from ESP32 with improved buffering.
+
         Returns:
             Response string if available, None otherwise
         """
         if self.esp and self.esp.is_open:
-            response = self.esp.readline().decode('utf-8', errors='ignore').strip()
-            if response:
-                return response
-            return None
+            try:
+                if self.esp.in_waiting > 0:
+                    # Czytaj aż do \n lub \r
+                    response = self.esp.readline().decode('utf-8', errors='ignore').strip()
+                    if response:
+                        return response
+                return None
+            except Exception as e:
+                print(f"Error reading from serial: {e}")
+                return None
         else:
             print("Port closed. Unable to read response.")
             return None
