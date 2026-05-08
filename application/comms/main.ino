@@ -1,9 +1,8 @@
 /*
- * CSAimBot Motor Control Firmware
+ * CSAimBot Motor Control Firmware - MODIFIED SAFE WORKSPACE VERSION
  * ESP32-based controller for CoreXY robotic platform with Z-axis servo
- * 
- * Handles stepper motor control, limit switches, hardware encoders,
- * servo actuation, relay control, and serial communication protocol.
+ * Limit switches: Debounced, used for XY Homing and Safety. Z-limit ignored.
+ * Workspace: Virtual software endstops set to 28cm X and 24cm Y from origin.
  */
 
 #include <ESP32Servo.h>
@@ -13,7 +12,6 @@
 // PIN DEFINITIONS
 // ============================================================================
 
-// Stepper motor driver pins
 #define PUL1_PIN 23
 #define DIR1_PIN 22
 #define PUL2_PIN 21
@@ -21,69 +19,101 @@
 #define PULZ_PIN 12
 #define DIRZ_PIN 17
 
-// Servo and relay control pins
 #define SERVO_PIN 25
 #define RELAY1_PIN 26
 #define RELAY2_PIN 27
 
-// Hardware encoder input pins
 #define ENCO1_PHASE_A 18
 #define ENCO1_PHASE_B 5
 #define ENCO2_PHASE_A 32
 #define ENCO2_PHASE_B 33
 
-// Limit switch inputs (active LOW)
 #define LIMIT_X_PIN 4
 #define LIMIT_Y_PIN 13
 #define LIMIT_Z_PIN 14
 
 // ============================================================================
+// NON-BLOCKING SERIAL BUFFER
+// ============================================================================
+
+const int MAX_BUFFER_SIZE = 64;
+char serialBuffer[MAX_BUFFER_SIZE];
+int bufferIndex = 0;
+bool isCommandReady = false;
+
+// ============================================================================
 // CONFIGURATION & STATE VARIABLES
 // ============================================================================
 
-// Motor timing configuration
 int delayCoreXY = 800;
 const int delayZ = 300;
 int homingDelay = 1500;
 
-// Motor running states
 bool motor1Running = false;
 bool motor2Running = false;
 bool motorZRunning = false;
 
-// Hardware encoder objects
+// Active movement tracking for continuous endstop monitoring
+bool isMovingUp = false;
+bool isMovingDown = false;
+bool isMovingLeft = false;
+bool isMovingRight = false;
+
 ESP32Encoder encoder1;
 ESP32Encoder encoder2;
 
-// Physical position tracking (centimeters)
 float currentPosX = 0.0;
 float currentPosY = 0.0;
 unsigned long lastEncoderPrint = 0;
 
-// Encoder calibration factor
-// Defines how many encoder ticks correspond to 1 cm of travel
 float stepsPerCM = 296.30;
 
-// Servo control variables
+// ============================================================================
+// ENCODER AXIS SIGN CALIBRATION
+// ============================================================================
+//
+// Po homingu:
+// - ruch w lewo powinien zmniejszać X, czyli X idzie w minus
+// - ruch w prawo powinien zwiększać X, czyli X idzie do 0
+// - ruch w dół powinien zwiększać Y, czyli Y idzie do 24
+// - ruch w górę powinien zmniejszać Y, czyli Y idzie do 0
+//
+// Jeśli jest odwrotnie, zmień SIGN_X albo SIGN_Y z 1 na -1.
+
+const int SIGN_X = 1;
+const int SIGN_Y = 1;
+
+// ============================================================================
+// SERVO
+// ============================================================================
+
 Servo mainServo;
 bool servoState = false;
 unsigned long lastServoToggle = 0;
 
-// Safe servo positions
 const int angleUp = 0;
 const int angleDown = 180;
 
-// Servo auto-detach timer
 unsigned long servoMoveStartTime = 0;
 bool isServoTimerActive = false;
+unsigned long lastLimitNotify = 0;
 
-// Software movement boundaries (workspace limits in cm)
+// ============================================================================
+// VIRTUAL WORKSPACE LIMITS
+// ============================================================================
+//
+// Po homingu i backoff:
+// X: od -28 cm do 0 cm
+// Y: od 0 cm do 24 cm
+
 const float LIMIT_MIN_X = -28.50;
 const float LIMIT_MAX_X = 0.00;
 const float LIMIT_MIN_Y = 0.00;
 const float LIMIT_MAX_Y = 24.50;
 
-// Serial protocol variables
+// Margines bezpieczeństwa, żeby nie dobijać idealnie do końca
+const float LIMIT_MARGIN_CM = 0.30;
+
 int posX = 0;
 int posY = 0;
 String pressedKeys = "";
@@ -92,27 +122,21 @@ String pressedKeys = "";
 // MOTOR CONTROL FUNCTIONS
 // ============================================================================
 
-/**
- * @brief Immediately stops all motors and clears pulse outputs
- */
 void stopAllMotors() {
   motor1Running = false;
   motor2Running = false;
   motorZRunning = false;
+
+  isMovingUp = false;
+  isMovingDown = false;
+  isMovingLeft = false;
+  isMovingRight = false;
 
   digitalWrite(PUL1_PIN, LOW);
   digitalWrite(PUL2_PIN, LOW);
   digitalWrite(PULZ_PIN, LOW);
 }
 
-/**
- * @brief Configures CoreXY motor directions and enables movement
- * 
- * @param run1 Enable state for motor 1
- * @param dir1 Direction for motor 1
- * @param run2 Enable state for motor 2
- * @param dir2 Direction for motor 2
- */
 void setMotorsXY(bool run1, int dir1, bool run2, int dir2) {
   motorZRunning = false;
 
@@ -125,213 +149,241 @@ void setMotorsXY(bool run1, int dir1, bool run2, int dir2) {
   motor2Running = run2;
 }
 
-/**
- * @brief Starts Z-axis movement
- * 
- * @param dirZ Direction of vertical motion
- */
 void moveZ(int dirZ) {
   motor1Running = false;
   motor2Running = false;
 
   digitalWrite(DIRZ_PIN, dirZ);
-
   delayMicroseconds(5);
 
   motorZRunning = true;
 }
 
 // ============================================================================
+// DEBOUNCE HELPER FUNCTION
+// ============================================================================
+
+bool isSwitchStablyPressed(int pin, unsigned long debounceTimeMs) {
+  if (digitalRead(pin) == HIGH) {
+    return false;
+  }
+
+  unsigned long startMillis = millis();
+
+  while (millis() - startMillis < debounceTimeMs) {
+    if (digitalRead(pin) == HIGH) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+// ============================================================================
+// POSITION UPDATE
+// ============================================================================
+
+void updateEncoderPosition() {
+  long e1Count = encoder1.getCount();
+  long e2Count = encoder2.getCount();
+
+  float ticksX = (e1Count - e2Count) / 2.0;
+  float ticksY = (e1Count + e2Count) / 2.0;
+
+  currentPosX = SIGN_X * ticksX / stepsPerCM;
+  currentPosY = SIGN_Y * ticksY / stepsPerCM;
+}
+
+// ============================================================================
+// SOFTWARE LIMIT CHECKS
+// ============================================================================
+
+bool isOutsideWorkspace() {
+  if (currentPosX <= LIMIT_MIN_X + LIMIT_MARGIN_CM) return true;
+  if (currentPosX >= LIMIT_MAX_X - LIMIT_MARGIN_CM) return true;
+  if (currentPosY <= LIMIT_MIN_Y + LIMIT_MARGIN_CM) return true;
+  if (currentPosY >= LIMIT_MAX_Y - LIMIT_MARGIN_CM) return true;
+
+  return false;
+}
+
+void applyContinuousWorkspaceLimit() {
+  if (isMovingLeft && currentPosX <= LIMIT_MIN_X + LIMIT_MARGIN_CM) {
+    stopAllMotors();
+    Serial.println("SOFT LIMIT: X MIN reached. Motors stopped.");
+  }
+
+  if (isMovingRight && currentPosX >= LIMIT_MAX_X - LIMIT_MARGIN_CM) {
+    stopAllMotors();
+    Serial.println("SOFT LIMIT: X MAX reached. Motors stopped.");
+  }
+
+  if (isMovingDown && currentPosY >= LIMIT_MAX_Y - LIMIT_MARGIN_CM) {
+    stopAllMotors();
+    Serial.println("SOFT LIMIT: Y MAX reached. Motors stopped.");
+  }
+
+  if (isMovingUp && currentPosY <= LIMIT_MIN_Y + LIMIT_MARGIN_CM) {
+    stopAllMotors();
+    Serial.println("SOFT LIMIT: Y MIN reached. Motors stopped.");
+  }
+}
+
+void blockMoveIfWouldExceedLimit(bool &moveUp, bool &moveDown, bool &moveLeft, bool &moveRight) {
+  if (moveLeft && currentPosX <= LIMIT_MIN_X + LIMIT_MARGIN_CM) {
+    moveLeft = false;
+    Serial.println("BLOCKED: moveLeft - X MIN");
+  }
+
+  if (moveRight && currentPosX >= LIMIT_MAX_X - LIMIT_MARGIN_CM) {
+    moveRight = false;
+    Serial.println("BLOCKED: moveRight - X MAX");
+  }
+
+  if (moveDown && currentPosY >= LIMIT_MAX_Y - LIMIT_MARGIN_CM) {
+    moveDown = false;
+    Serial.println("BLOCKED: moveDown - Y MAX");
+  }
+
+  if (moveUp && currentPosY <= LIMIT_MIN_Y + LIMIT_MARGIN_CM) {
+    moveUp = false;
+    Serial.println("BLOCKED: moveUp - Y MIN");
+  }
+}
+
+// ============================================================================
 // HOMING SEQUENCE
 // ============================================================================
 
-/**
- * @brief Homes all machine axes using limit switches
- * 
- * Sequence:
- * 1. Z-axis
- * 2. X-axis
- * 3. Y-axis
- * 
- * Applies backlash compensation after each axis is homed.
- * Hardware encoder counts are reset after homing completion.
- */
 void performHoming() {
   Serial.println("Homing start...");
-
   stopAllMotors();
 
-  // ------------------------------------------------------------------------
-  // 1. Z-Axis Homing
-  // ------------------------------------------------------------------------
+  int backoffSteps = (int)stepsPerCM;
+  int debounceLimitMs = 30;
 
-  digitalWrite(DIRZ_PIN, LOW);
+  // ==========================================================================
+  // 1. X-AXIS HOMING
+  // ==========================================================================
 
-  while(digitalRead(LIMIT_Z_PIN) == HIGH) {
-    digitalWrite(PULZ_PIN, HIGH);
-    delayMicroseconds(homingDelay);
-
-    digitalWrite(PULZ_PIN, LOW);
-    delayMicroseconds(homingDelay);
-
-    delay(1);
-  }
-
-  // Backlash compensation
-  digitalWrite(DIRZ_PIN, HIGH);
-
-  for(int i = 0; i < 500; i++) {
-    digitalWrite(PULZ_PIN, HIGH);
-    delayMicroseconds(homingDelay);
-
-    digitalWrite(PULZ_PIN, LOW);
-    delayMicroseconds(homingDelay);
-
-    delay(1);
-  }
-
-  // ------------------------------------------------------------------------
-  // 2. X-Axis Homing
-  // ------------------------------------------------------------------------
+  Serial.println("Homing X...");
 
   digitalWrite(DIR1_PIN, HIGH);
   digitalWrite(DIR2_PIN, LOW);
 
-  while(digitalRead(LIMIT_X_PIN) == HIGH) {
+  while (!isSwitchStablyPressed(LIMIT_X_PIN, debounceLimitMs)) {
     digitalWrite(PUL1_PIN, HIGH);
     digitalWrite(PUL2_PIN, HIGH);
-
     delayMicroseconds(homingDelay);
 
     digitalWrite(PUL1_PIN, LOW);
     digitalWrite(PUL2_PIN, LOW);
-
     delayMicroseconds(homingDelay);
-
-    delay(1);
   }
 
-  // Backlash compensation
+  Serial.println("X limit hit. Backing off...");
+
+  // Back-off X by around 1 cm
   digitalWrite(DIR1_PIN, LOW);
   digitalWrite(DIR2_PIN, HIGH);
 
-  for(int i = 0; i < 200; i++) {
+  for (int i = 0; i < backoffSteps; i++) {
     digitalWrite(PUL1_PIN, HIGH);
     digitalWrite(PUL2_PIN, HIGH);
-
     delayMicroseconds(homingDelay);
 
     digitalWrite(PUL1_PIN, LOW);
     digitalWrite(PUL2_PIN, LOW);
-
     delayMicroseconds(homingDelay);
-
-    delay(1);
   }
 
-  // ------------------------------------------------------------------------
-  // 3. Y-Axis Homing
-  // ------------------------------------------------------------------------
+  delay(200);
+
+  // ==========================================================================
+  // 2. Y-AXIS HOMING
+  // ==========================================================================
+
+  Serial.println("Homing Y...");
 
   digitalWrite(DIR1_PIN, HIGH);
   digitalWrite(DIR2_PIN, HIGH);
 
-  while(digitalRead(LIMIT_Y_PIN) == HIGH) {
+  while (!isSwitchStablyPressed(LIMIT_Y_PIN, debounceLimitMs)) {
     digitalWrite(PUL1_PIN, HIGH);
     digitalWrite(PUL2_PIN, HIGH);
-
     delayMicroseconds(homingDelay);
 
     digitalWrite(PUL1_PIN, LOW);
     digitalWrite(PUL2_PIN, LOW);
-
     delayMicroseconds(homingDelay);
-
-    delay(1);
   }
 
-  // Backlash compensation
+  Serial.println("Y limit hit. Backing off...");
+
+  // Back-off Y by around 1 cm
   digitalWrite(DIR1_PIN, LOW);
   digitalWrite(DIR2_PIN, LOW);
 
-  for(int i = 0; i < 200; i++) {
+  for (int i = 0; i < backoffSteps; i++) {
     digitalWrite(PUL1_PIN, HIGH);
     digitalWrite(PUL2_PIN, HIGH);
-
     delayMicroseconds(homingDelay);
 
     digitalWrite(PUL1_PIN, LOW);
     digitalWrite(PUL2_PIN, LOW);
-
     delayMicroseconds(homingDelay);
-
-    delay(1);
   }
 
-  // Reset logical and encoder positions
+  delay(200);
+
+  // ==========================================================================
+  // RESET POSITION
+  // ==========================================================================
+
   posX = 0;
   posY = 0;
 
   encoder1.clearCount();
   encoder2.clearCount();
 
-  Serial.println("Homing OK! Encoder positions reset.");
+  currentPosX = 0.0;
+  currentPosY = 0.0;
+
+  stopAllMotors();
+
+  Serial.println("Homing OK! Position set to 0,0.");
 }
 
 // ============================================================================
-// SETUP & INITIALIZATION
+// SETUP
 // ============================================================================
 
-/**
- * @brief Initializes serial communication, GPIO pins,
- * hardware encoders, relays, and servo state.
- */
 void setup() {
   Serial.begin(115200);
-  Serial.setTimeout(30);
 
-  // Configure motor output pins
   pinMode(PUL1_PIN, OUTPUT);
   pinMode(DIR1_PIN, OUTPUT);
-
   pinMode(PUL2_PIN, OUTPUT);
   pinMode(DIR2_PIN, OUTPUT);
-
   pinMode(PULZ_PIN, OUTPUT);
   pinMode(DIRZ_PIN, OUTPUT);
 
-  // Configure relay outputs
   pinMode(RELAY1_PIN, OUTPUT);
   pinMode(RELAY2_PIN, OUTPUT);
 
-  // Configure limit switch inputs
   pinMode(LIMIT_X_PIN, INPUT_PULLUP);
   pinMode(LIMIT_Y_PIN, INPUT_PULLUP);
   pinMode(LIMIT_Z_PIN, INPUT_PULLUP);
 
-  // Initialize outputs to safe state
   stopAllMotors();
 
   digitalWrite(RELAY1_PIN, LOW);
   digitalWrite(RELAY2_PIN, LOW);
 
-  // ------------------------------------------------------------------------
-  // Servo initialization
-  // ------------------------------------------------------------------------
-
   mainServo.attach(SERVO_PIN);
   mainServo.write(angleUp);
-
   delay(1000);
-
-  // Reduce servo heating/noise by detaching after startup
   mainServo.detach();
-
-  Serial.println("Servo detached after startup.");
-
-  // ------------------------------------------------------------------------
-  // Hardware encoder initialization
-  // ------------------------------------------------------------------------
 
   ESP32Encoder::useInternalWeakPullResistors = puType::up;
 
@@ -341,308 +393,323 @@ void setup() {
   encoder1.clearCount();
   encoder2.clearCount();
 
-  Serial.println("System Ready (Hardware PCNT Mode)");
+  Serial.println("Controller ready.");
+  Serial.println("Send h command to perform homing.");
 }
 
 // ============================================================================
-// MAIN CONTROL LOOP
+// MAIN LOOP
 // ============================================================================
 
-/**
- * @brief Main firmware execution loop
- * 
- * Serial Protocol:
- * "dX,dY,speed,keys\r"
- * 
- * dX, dY  -> target movement offsets
- * speed   -> movement speed (1-100)
- * keys    -> command characters
- * 
- * Controls:
- * i/j/k/l -> XY movement
- * z/x     -> Z-axis movement
- * v       -> servo toggle
- * 1/2     -> relay outputs
- * h       -> homing sequence
- * p       -> emergency stop
- */
 void loop() {
 
-  // ------------------------------------------------------------------------
-  // LIMIT SWITCH SAFETY MONITORING
-  // ------------------------------------------------------------------------
+  // ==========================================================================
+  // 1. HARDWARE ENCODER POSITION CALCULATION
+  // ==========================================================================
 
-  bool limitX = (digitalRead(LIMIT_X_PIN) == LOW);
-  bool limitY = (digitalRead(LIMIT_Y_PIN) == LOW);
-  bool limitZ = (digitalRead(LIMIT_Z_PIN) == LOW);
+  updateEncoderPosition();
 
-  // Emergency stop if switch triggered during movement
-  if ((limitX || limitY || limitZ) &&
-      (motor1Running || motor2Running || motorZRunning)) {
-
-      stopAllMotors();
-      Serial.println("ALARM_LIMIT");
-  }
-
-  // ------------------------------------------------------------------------
-  // HARDWARE ENCODER POSITION CALCULATION
-  // ------------------------------------------------------------------------
-
-  long e1Count = encoder1.getCount();
-  long e2Count = encoder2.getCount();
-
-  // CoreXY kinematics conversion
-  float ticksX = (e1Count - e2Count) / 2.0;
-  float ticksY = (e1Count + e2Count) / 2.0;
-
-  // Convert encoder ticks into centimeters
-  currentPosX = ticksX / stepsPerCM;
-  currentPosY = ticksY / stepsPerCM;
-
-  // Periodic position diagnostic output
   if (millis() - lastEncoderPrint > 500) {
-      Serial.print("Pozycja X: ");
-      Serial.print(currentPosX);
+    long e1Count = encoder1.getCount();
+    long e2Count = encoder2.getCount();
 
-      Serial.print(" cm | Y: ");
-      Serial.print(currentPosY);
+    Serial.print("E1: ");
+    Serial.print(e1Count);
 
-      Serial.println(" cm");
+    Serial.print(" | E2: ");
+    Serial.print(e2Count);
 
-      lastEncoderPrint = millis();
+    Serial.print(" | X: ");
+    Serial.print(currentPosX);
+
+    Serial.print(" | Y: ");
+    Serial.print(currentPosY);
+
+    Serial.print(" | L:");
+    Serial.print(isMovingLeft);
+
+    Serial.print(" R:");
+    Serial.print(isMovingRight);
+
+    Serial.print(" U:");
+    Serial.print(isMovingUp);
+
+    Serial.print(" D:");
+    Serial.println(isMovingDown);
+
+    lastEncoderPrint = millis();
+}
+
+  // ==========================================================================
+  // 2. CONTINUOUS SOFTWARE WORKSPACE LIMIT MONITOR
+  // ==========================================================================
+
+  applyContinuousWorkspaceLimit();
+
+  // ==========================================================================
+  // 3. LIMIT SWITCH SAFETY & BOUNCE BACK
+  // ==========================================================================
+
+  bool limitX = isSwitchStablyPressed(LIMIT_X_PIN, 30);
+  bool limitY = isSwitchStablyPressed(LIMIT_Y_PIN, 30);
+  bool limitZ = false;
+
+  if (limitX || limitY || limitZ) {
+    stopAllMotors();
+
+    Serial.println("WARNING: Limit switch hit! Bouncing back...");
+
+    int bounceSteps = (int)stepsPerCM;
+    int bounceDelay = 800;
+
+    if (limitX) {
+      digitalWrite(DIR1_PIN, LOW);
+      digitalWrite(DIR2_PIN, HIGH);
+
+      for (int i = 0; i < bounceSteps; i++) {
+        digitalWrite(PUL1_PIN, HIGH);
+        digitalWrite(PUL2_PIN, HIGH);
+        delayMicroseconds(bounceDelay);
+
+        digitalWrite(PUL1_PIN, LOW);
+        digitalWrite(PUL2_PIN, LOW);
+        delayMicroseconds(bounceDelay);
+      }
+    }
+
+    if (limitY) {
+      digitalWrite(DIR1_PIN, LOW);
+      digitalWrite(DIR2_PIN, LOW);
+
+      for (int i = 0; i < bounceSteps; i++) {
+        digitalWrite(PUL1_PIN, HIGH);
+        digitalWrite(PUL2_PIN, HIGH);
+        delayMicroseconds(bounceDelay);
+
+        digitalWrite(PUL1_PIN, LOW);
+        digitalWrite(PUL2_PIN, LOW);
+        delayMicroseconds(bounceDelay);
+      }
+    }
+
+    stopAllMotors();
+
+    isCommandReady = false;
+    bufferIndex = 0;
+
+    delay(200);
   }
 
-  // ------------------------------------------------------------------------
-  // NON-BLOCKING SERVO AUTO-DETACH TIMER
-  // ------------------------------------------------------------------------
+  // ==========================================================================
+  // 4. SERVO AUTO-DETACH
+  // ==========================================================================
 
-  if (isServoTimerActive &&
-      (millis() - servoMoveStartTime >= 2000)) {
-
-      mainServo.detach();
-      isServoTimerActive = false;
+  if (isServoTimerActive && (millis() - servoMoveStartTime >= 2000)) {
+    mainServo.detach();
+    isServoTimerActive = false;
   }
 
-  // ------------------------------------------------------------------------
-  // SERIAL COMMAND PROCESSING
-  // ------------------------------------------------------------------------
+  // ==========================================================================
+  // 5. SERIAL COMMAND RECEIVING
+  // ==========================================================================
 
-  if (Serial.available() > 0) {
+  while (Serial.available() > 0 && !isCommandReady) {
+    char incomingChar = Serial.read();
 
-    String data = Serial.readStringUntil('\r');
-    data.trim();
-
-    if (data.length() > 0) {
-
-      int commaIndexOne = data.indexOf(',');
-      int commaIndexTwo = data.indexOf(',', commaIndexOne + 1);
-      int commaIndexThree = data.indexOf(',', commaIndexTwo + 1);
-
-      if (commaIndexOne > 0 &&
-          commaIndexTwo > 0 &&
-          commaIndexThree > 0) {
-
-        posX = data.substring(0, commaIndexOne).toInt();
-        posY = data.substring(commaIndexOne + 1, commaIndexTwo).toInt();
-
-        int speedValue =
-          data.substring(commaIndexTwo + 1, commaIndexThree).toInt();
-
-        pressedKeys =
-          data.substring(commaIndexThree + 1);
-
-        // Convert speed range 1-100 into pulse delay
-        if(speedValue >= 1 && speedValue <= 100) {
-
-          delayCoreXY =
-            (int)(1000000.0 /
-            (100.0 + ((speedValue - 1.0) / 99.0) * 9900.0));
-        }
-
-        // ----------------------------------------------------------------
-        // COMMAND EXECUTION
-        // ----------------------------------------------------------------
-
-        if (pressedKeys.indexOf('p') >= 0) {
-
-          stopAllMotors();
-
-        } else if (pressedKeys.indexOf('h') >= 0) {
-
-          performHoming();
-
-        } else {
-
-          // --------------------------------------------------------------
-          // MANUAL MOVEMENT INPUT
-          // --------------------------------------------------------------
-
-          bool moveUp =
-            pressedKeys.indexOf('i') >= 0;
-
-          bool moveDown =
-            pressedKeys.indexOf('k') >= 0;
-
-          bool moveLeft =
-            pressedKeys.indexOf('j') >= 0;
-
-          bool moveRight =
-            pressedKeys.indexOf('l') >= 0;
-
-          // --------------------------------------------------------------
-          // AUTOMATIC YOLO TRACKING INPUT
-          // --------------------------------------------------------------
-
-          if (!moveUp &&
-              !moveDown &&
-              !moveLeft &&
-              !moveRight) {
-
-            int deadzoneX = 15;
-            int deadzoneY = 15;
-
-            if (posX > deadzoneX)
-              moveRight = true;
-            else if (posX < -deadzoneX)
-              moveLeft = true;
-
-            if (posY > deadzoneY)
-              moveUp = true;
-            else if (posY < -deadzoneY)
-              moveDown = true;
-          }
-
-          // --------------------------------------------------------------
-          // SOFTWARE ENDSTOPS
-          // Prevent movement outside workspace boundaries
-          // --------------------------------------------------------------
-
-          if (moveLeft && currentPosX <= LIMIT_MIN_X)
-            moveLeft = false;
-
-          if (moveRight && currentPosX >= LIMIT_MAX_X)
-            moveRight = false;
-
-          if (moveDown && currentPosY >= LIMIT_MAX_Y)
-            moveDown = false;
-
-          if (moveUp && currentPosY <= LIMIT_MIN_Y)
-            moveUp = false;
-
-          // --------------------------------------------------------------
-          // COREXY MOTOR MAPPING
-          // --------------------------------------------------------------
-
-          if (moveUp && moveLeft)
-            setMotorsXY(false, LOW, true, HIGH);
-
-          else if (moveUp && moveRight)
-            setMotorsXY(true, HIGH, false, LOW);
-
-          else if (moveDown && moveLeft)
-            setMotorsXY(true, LOW, false, LOW);
-
-          else if (moveDown && moveRight)
-            setMotorsXY(false, LOW, true, LOW);
-
-          else if (moveUp)
-            setMotorsXY(true, HIGH, true, HIGH);
-
-          else if (moveDown)
-            setMotorsXY(true, LOW, true, LOW);
-
-          else if (moveLeft)
-            setMotorsXY(true, LOW, true, HIGH);
-
-          else if (moveRight)
-            setMotorsXY(true, HIGH, true, LOW);
-
-          else {
-            motor1Running = false;
-            motor2Running = false;
-          }
-
-          // --------------------------------------------------------------
-          // Z-AXIS CONTROL
-          // --------------------------------------------------------------
-
-          if (pressedKeys.indexOf('z') >= 0)
-            moveZ(HIGH);
-
-          else if (pressedKeys.indexOf('x') >= 0)
-            moveZ(LOW);
-
-          else
-            motorZRunning = false;
-
-          // --------------------------------------------------------------
-          // SERVO TOGGLE CONTROL
-          // --------------------------------------------------------------
-
-          if (pressedKeys.indexOf('v') >= 0) {
-
-            if (millis() - lastServoToggle > 500) {
-
-              servoState = !servoState;
-
-              mainServo.attach(SERVO_PIN);
-
-              mainServo.write(
-                servoState ? angleDown : angleUp
-              );
-
-              servoMoveStartTime = millis();
-              isServoTimerActive = true;
-
-              lastServoToggle = millis();
-            }
-          }
-
-          // --------------------------------------------------------------
-          // RELAY OUTPUT CONTROL
-          // --------------------------------------------------------------
-
-          digitalWrite(
-            RELAY1_PIN,
-            (pressedKeys.indexOf('1') >= 0) ? HIGH : LOW
-          );
-
-          digitalWrite(
-            RELAY2_PIN,
-            (pressedKeys.indexOf('2') >= 0) ? HIGH : LOW
-          );
-        }
+    if (incomingChar == '\r' || incomingChar == '\n') {
+      serialBuffer[bufferIndex] = '\0';
+      isCommandReady = true;
+    } else {
+      if (bufferIndex < MAX_BUFFER_SIZE - 1) {
+        serialBuffer[bufferIndex] = incomingChar;
+        bufferIndex++;
       }
     }
   }
 
-  // ------------------------------------------------------------------------
-  // IDLE STATE HANDLING
-  // ------------------------------------------------------------------------
+  // ==========================================================================
+  // 6. COMMAND PARSING & EXECUTION
+  // ==========================================================================
 
-  if (!motor1Running &&
-      !motor2Running &&
-      !motorZRunning) {
+  if (isCommandReady) {
+    String data = String(serialBuffer);
+    data.trim();
 
+    if (data.length() > 0) {
+      int commaIndexOne = data.indexOf(',');
+      int commaIndexTwo = data.indexOf(',', commaIndexOne + 1);
+      int commaIndexThree = data.indexOf(',', commaIndexTwo + 1);
+
+      if (commaIndexOne > 0 && commaIndexTwo > 0 && commaIndexThree > 0) {
+        posX = data.substring(0, commaIndexOne).toInt();
+        posY = data.substring(commaIndexOne + 1, commaIndexTwo).toInt();
+
+        int speedValue = data.substring(commaIndexTwo + 1, commaIndexThree).toInt();
+
+        pressedKeys = data.substring(commaIndexThree + 1);
+
+        if (speedValue >= 1 && speedValue <= 100) {
+          delayCoreXY = (int)(1000000.0 / (100.0 + ((speedValue - 1.0) / 99.0) * 9900.0));
+        }
+
+        if (pressedKeys.indexOf('p') >= 0) {
+          stopAllMotors();
+        }
+
+        else if (pressedKeys.indexOf('h') >= 0) {
+          performHoming();
+        }
+
+        else {
+          bool moveUp = (pressedKeys.indexOf('i') >= 0);
+          bool moveDown = (pressedKeys.indexOf('k') >= 0);
+          bool moveLeft = (pressedKeys.indexOf('j') >= 0);
+          bool moveRight = (pressedKeys.indexOf('l') >= 0);
+
+          // If no keyboard movement, use posX and posY joystick/mouse values
+          if (!moveUp && !moveDown && !moveLeft && !moveRight) {
+            int deadzoneX = 15;
+            int deadzoneY = 15;
+
+            if (posX > deadzoneX) {
+              moveRight = true;
+            } else if (posX < -deadzoneX) {
+              moveLeft = true;
+            }
+
+            if (posY > deadzoneY) {
+              moveUp = true;
+            } else if (posY < -deadzoneY) {
+              moveDown = true;
+            }
+          }
+
+          // Update position right before checking limits
+          updateEncoderPosition();
+
+          // SOFTWARE ENDSTOPS - INITIAL CHECK
+          blockMoveIfWouldExceedLimit(moveUp, moveDown, moveLeft, moveRight);
+
+          // Reset continuous tracking flags before setting new ones
+          isMovingUp = false;
+          isMovingDown = false;
+          isMovingLeft = false;
+          isMovingRight = false;
+
+          // ==================================================================
+          // APPLY COREXY MOVEMENT
+          // ==================================================================
+
+          if (moveUp && moveLeft) {
+            setMotorsXY(false, LOW, true, HIGH);
+            isMovingUp = true;
+            isMovingLeft = true;
+          }
+
+          else if (moveUp && moveRight) {
+            setMotorsXY(true, HIGH, false, LOW);
+            isMovingUp = true;
+            isMovingRight = true;
+          }
+
+          else if (moveDown && moveLeft) {
+            setMotorsXY(true, LOW, false, LOW);
+            isMovingDown = true;
+            isMovingLeft = true;
+          }
+
+          else if (moveDown && moveRight) {
+            setMotorsXY(false, LOW, true, LOW);
+            isMovingDown = true;
+            isMovingRight = true;
+          }
+
+          else if (moveUp) {
+            setMotorsXY(true, HIGH, true, HIGH);
+            isMovingUp = true;
+          }
+
+          else if (moveDown) {
+            setMotorsXY(true, LOW, true, LOW);
+            isMovingDown = true;
+          }
+
+          else if (moveLeft) {
+            setMotorsXY(true, LOW, true, HIGH);
+            isMovingLeft = true;
+          }
+
+          else if (moveRight) {
+            setMotorsXY(true, HIGH, true, LOW);
+            isMovingRight = true;
+          }
+
+          else {
+            stopAllMotors();
+          }
+
+          // ==================================================================
+          // Z AXIS
+          // ==================================================================
+
+          if (pressedKeys.indexOf('z') >= 0) {
+            moveZ(HIGH);
+          }
+
+          else if (pressedKeys.indexOf('x') >= 0) {
+            moveZ(LOW);
+          }
+
+          else {
+            motorZRunning = false;
+          }
+
+          // ==================================================================
+          // SERVO
+          // ==================================================================
+
+          if (pressedKeys.indexOf('v') >= 0 && (millis() - lastServoToggle > 500)) {
+            servoState = !servoState;
+
+            mainServo.attach(SERVO_PIN);
+            mainServo.write(servoState ? angleDown : angleUp);
+
+            servoMoveStartTime = millis();
+            isServoTimerActive = true;
+            lastServoToggle = millis();
+          }
+
+          // ==================================================================
+          // RELAYS
+          // ==================================================================
+
+          digitalWrite(RELAY1_PIN, (pressedKeys.indexOf('1') >= 0) ? HIGH : LOW);
+          digitalWrite(RELAY2_PIN, (pressedKeys.indexOf('2') >= 0) ? HIGH : LOW);
+        }
+      }
+    }
+
+    bufferIndex = 0;
+    isCommandReady = false;
+  }
+
+  // ==========================================================================
+  // 7. STEP GENERATION
+  // ==========================================================================
+
+  if (!motor1Running && !motor2Running && !motorZRunning) {
     delay(1);
     return;
   }
 
-  // ------------------------------------------------------------------------
-  // STEP PULSE GENERATION
-  // ------------------------------------------------------------------------
+  int currentDelay = (motorZRunning) ? delayZ : delayCoreXY;
 
-  int currentDelay =
-    (motorZRunning) ? delayZ : delayCoreXY;
-
-  // Generate HIGH pulse
   if (motor1Running) digitalWrite(PUL1_PIN, HIGH);
   if (motor2Running) digitalWrite(PUL2_PIN, HIGH);
   if (motorZRunning) digitalWrite(PULZ_PIN, HIGH);
 
   delayMicroseconds(currentDelay);
 
-  // Generate LOW pulse
   if (motor1Running) digitalWrite(PUL1_PIN, LOW);
   if (motor2Running) digitalWrite(PUL2_PIN, LOW);
   if (motorZRunning) digitalWrite(PULZ_PIN, LOW);
