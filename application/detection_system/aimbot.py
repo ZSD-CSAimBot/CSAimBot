@@ -157,9 +157,10 @@ class AimBot:
                     cv2.rectangle(self.debug_frame, (x1, y1), (x2, y2), color, 2)
 
             offset_x, offset_y = self.best_target_position
-            if offset_x is not None and offset_y is not None:
+            if offset_x != "-" and offset_y != "-":
                 center_x = int(self.FOV_WIDTH / 2.0)
                 center_y = int(self.FOV_HEIGHT / 2.0)
+
                 target_x = int(center_x + offset_x)
                 target_y = int(center_y + offset_y)
                 cv2.line(self.debug_frame, (center_x, center_y), (target_x, target_y), (0, 0, 255, 255), 2)
@@ -184,14 +185,14 @@ class AimBot:
             result_tensor = results[0].boxes.data
             self.recoil_control = self.update_recoil_state(result_tensor)
             result = self.calculate_best_target_position(result_tensor)
-            self.best_target_position = result if result[0] is not None else (0, 0)
+            self.best_target_position = result if result[0] is not None else ("-", "-")
 
             if self.show_debug_window:
                 cpu_numpy_data = result_tensor.cpu().numpy()
                 self.display_results(cpu_numpy_data)
         else:
             self.recoil_control = False
-            self.best_target_position = (0, 0)
+            self.best_target_position = ("-", "-")
             if self.show_debug_window:
                 self.display_results(None)
 
