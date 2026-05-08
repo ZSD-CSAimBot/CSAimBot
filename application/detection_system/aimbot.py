@@ -25,8 +25,8 @@ class AimBot:
 
     def prepare_camera(self):
         """Configure the capture region and camera provider."""
-        SCREEN_WIDTH = 2560
-        SCREEN_HEIGHT = 1440
+        SCREEN_WIDTH = 1920
+        SCREEN_HEIGHT = 1080
         self.FOV_WIDTH = 1280
         self.FOV_HEIGHT = 736
 

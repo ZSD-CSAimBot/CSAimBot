@@ -888,15 +888,14 @@ class GUI:
                                                            callback=self.on_connect_click)  # Full-width connection toggle
                     dpg.bind_item_theme(self.btn_connect_full, self.transparent_btn_theme)
 
-    def on_speed_change_control(self, app_data):
-        """Update the active speed setting.
+    def on_speed_change_control(self, sender, app_data, user_data=None):
+        """Update the active speed setting."""
+        # Bezpieczne pobranie wartości bezpośrednio z elementu interfejsu
+        current_val = dpg.get_value(sender)
+        self.current_speed = int(current_val)
 
-        Args:
-            app_data: Slider value from the control page.
-        """
-        self.current_speed = int(app_data)
         t = self.lang_dict[self.current_lang]
-        dpg.set_value("speed_text_label_control", f"{t['speed']}: {app_data}%")
+        dpg.set_value("speed_text_label_control", f"{t['speed']}: {self.current_speed}%")
 
     def on_target_change(self, app_data):
         """Update target prioritization across the UI.
@@ -1147,6 +1146,7 @@ class GUI:
         while dpg.is_dearpygui_running():
             current_key = ""
 
+            # Existing directional buttons (jogging)
             if dpg.does_item_exist("btn_left_lpm") and dpg.is_item_active("btn_left_lpm"):
                 current_key = "j"
             elif dpg.does_item_exist("btn_right_lpm") and dpg.is_item_active("btn_right_lpm"):
@@ -1159,6 +1159,14 @@ class GUI:
                 current_key = "x"
             elif dpg.does_item_exist("btn_right_test") and dpg.is_item_active("btn_right_test"):
                 current_key = "z"
+
+            # ADDED: Main action buttons
+            elif dpg.does_item_exist("btn_lpm_control") and dpg.is_item_active("btn_lpm_control"):
+                current_key = "1"
+            elif dpg.does_item_exist("btn_ppm_control") and dpg.is_item_active("btn_ppm_control"):
+                current_key = "2"
+            elif dpg.does_item_exist("btn_test_control") and dpg.is_item_active("btn_test_control"):
+                current_key = "v"
 
             if not current_key:
                 # Keyboard input is already forwarded by comms_worker; mouse actions take priority here.
