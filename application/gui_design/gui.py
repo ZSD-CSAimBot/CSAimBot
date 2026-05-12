@@ -50,6 +50,13 @@ class GUI:
         self.target_offset_y = 0
         self.manual_keys = ""
         self.current_speed = 75
+        # PID Controller variables for visual servoing
+        self.kp = 0.4  # Proportional gain (depends on current error)
+        self.ki = 0.0  # Integral gain (depends on sum of past errors)
+        self.kd = 0.1  # Derivative gain (depends on rate of error change)
+        self.pid_integral = 0.0
+        self.pid_prev_error = 0.0
+        self.pid_last_time = time.time()
 
         self.active_page_tag = "page_home"
         self.nav_config = {
@@ -1081,50 +1088,85 @@ class GUI:
         - Manual keys are sent with 0,0 offset so old AI offsets cannot mix with jog commands.
         - If no manual key is active, each valid vision offset is forwarded to ESP32 as AIM input.
         """
+        last_vision_send = 0
+
         while self.running:
+            # =================================================================
+            # 1. VISION PIPE - Drain and send the latest YOLO data
+            # =================================================================
+            latest_vision_msg = None
+
             while self.pipe.poll():
                 msg = self.pipe.recv()
                 if msg.get("type") == "offsets":
-                    x_val = msg.get("x")
-                    y_val = msg.get("y")
-                    
-                    # DEBUG: Print all data from aimbot.py
-                    print(f"<AIMBOT> Received message: {msg}", flush=True)
-                    print(f"<AIMBOT> x_val={x_val}, y_val={y_val}", flush=True)
+                    latest_vision_msg = msg
 
-                    # aimbot.py uses "-" when no target is detected.
-                    if x_val is None or y_val is None or x_val == "-" or y_val == "-":
+            if latest_vision_msg:
+                x_val = latest_vision_msg.get("x")
+                y_val = latest_vision_msg.get("y")
+
+                force_update = False
+
+                if x_val is None or y_val is None or x_val == "-" or y_val == "-":
+                    if self.target_offset_x != 0 or self.target_offset_y != 0:
+                        force_update = True
+                    self.target_offset_x = 0
+                    self.target_offset_y = 0
+                else:
+                    try:
+                        self.target_offset_x = int(x_val)
+                        self.target_offset_y = -int(y_val)
+                    except (TypeError, ValueError):
                         self.target_offset_x = 0
                         self.target_offset_y = 0
-                        print(f"<AIMBOT> No target detected", flush=True)
-                    else:
-                        try:
-                            self.target_offset_x = int(x_val)
-                            self.target_offset_y = int(y_val)
-                            print(f"<AIMBOT> Target found: target_offset_x={self.target_offset_x}, target_offset_y={self.target_offset_y}", flush=True)
-                        except (TypeError, ValueError):
-                            self.target_offset_x = 0
-                            self.target_offset_y = 0
-                            print(f"<AIMBOT> Error converting values to int", flush=True)
 
-                    # Display latest AI offset in coordinate fields.
-                    for axis, val in [("x", self.target_offset_x), ("y", self.target_offset_y)]:
-                        tag_control = f"coord_{axis}_control"
-                        tag_home = f"coord_{axis}_home"
-                        if dpg.does_item_exist(tag_control):
-                            dpg.set_value(tag_control, str(val))
-                        if dpg.does_item_exist(tag_home):
-                            dpg.set_value(tag_home, str(val))
+                for axis, val in [("x", self.target_offset_x), ("y", self.target_offset_y)]:
+                    tag_control = f"coord_{axis}_control"
+                    tag_home = f"coord_{axis}_home"
+                    if dpg.does_item_exist(tag_control):
+                        dpg.set_value(tag_control, str(val))
+                    if dpg.does_item_exist(tag_home):
+                        dpg.set_value(tag_home, str(val))
 
-                    # If the user is not manually jogging, forward AI target offsets to ESP32.
-                    # Empty key field means main.ino will use posX/posY as aim/joystick input.
-                    if self.is_connected and not self.manual_keys:
+                now = time.time()
+                if self.is_connected and not self.manual_keys:
+                    if force_update or (now - last_vision_send > 0.05):
+
+                        dist = math.hypot(self.target_offset_x, self.target_offset_y)
+
+                        # =====================================================
+                        # NON-LINEAR PROPORTIONAL CONTROLLER (Aggressive brake)
+                        # =====================================================
+                        slowdown_radius = 350.0  # Pixels distance to start hitting the brakes
+
+                        if dist > slowdown_radius:
+                            dyn_speed = self.current_speed
+                        else:
+                            # Exponential deceleration using a power of 1.5
+                            # The closer the bot gets, the harder it brakes
+                            scale = (dist / slowdown_radius) ** 1.5
+                            dyn_speed = int(2 + (self.current_speed - 2) * scale)
+
+                        # Safety clamp
+                        dyn_speed = max(2, min(dyn_speed, self.current_speed))
+
+                        # Hard stop if within ESP32 deadzone
+                        if dist <= 15:
+                            dyn_speed = 0
+
+                        # DEBUG: Print real-time dynamic speed to the console
+                        if dist > 0:
+                            print(f"<AIMBOT> Dist: {dist:.0f}px | Speed sent: {dyn_speed}%", flush=True)
+
                         self.comms_pipe.send({
                             "cmd": "SEND",
-                            "value": f"{self.target_offset_x},{self.target_offset_y},{self.current_speed},"
+                            "value": f"{self.target_offset_x},{self.target_offset_y},{dyn_speed},"
                         })
-                        print(f"<AIMBOT> Sent to ESP32: {self.target_offset_x},{self.target_offset_y},{self.current_speed}", flush=True)
+                        last_vision_send = now
 
+            # =================================================================
+            # 2. COMMS PIPE - Receive logs from ESP32 and physical keyboard
+            # =================================================================
             while self.comms_pipe.poll():
                 msg = self.comms_pipe.recv()
                 if msg.get("type") == "connection_status":
@@ -1137,14 +1179,13 @@ class GUI:
 
                     if self.is_connected:
                         if keys:
-                            # Manual keyboard input has priority and must not include AI offset.
                             self.comms_pipe.send(
                                 {"cmd": "SEND", "value": f"0,0,{self.current_speed},{keys}"}
                             )
                         else:
-                            # On key release, immediately resume AI offset mode or stop if no target.
                             self.comms_pipe.send(
-                                {"cmd": "SEND", "value": f"{self.target_offset_x},{self.target_offset_y},{self.current_speed},"}
+                                {"cmd": "SEND",
+                                 "value": f"{self.target_offset_x},{self.target_offset_y},{self.current_speed},"}
                             )
 
                     display_text = f"[ {keys.upper()} ]" if keys else "[ BRAK ]"
@@ -1168,6 +1209,10 @@ class GUI:
                         tag = f"stat_val_{key}"
                         if dpg.does_item_exist(tag):
                             dpg.configure_item(tag, label=StatsManager.format_value(key, self.stats_manager.get(key)))
+
+            # =================================================================
+            # 3. SIM PIPE - Receive side simulation status
+            # =================================================================
             while self.sim_pipe.poll():
                 msg = self.sim_pipe.recv()
                 if msg.get("type") == "simulation_status":
@@ -1179,7 +1224,7 @@ class GUI:
                             color = [255, 80, 80]
                         self.add_log(message, color)
                     self.update_simulation_display()
-                
+
             time.sleep(0.01)
 
             now = time.time()
