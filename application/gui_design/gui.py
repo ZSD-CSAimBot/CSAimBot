@@ -1039,7 +1039,7 @@ class GUI:
             self.update_connection_display()
             self.comms_pipe.send({"cmd": "DISCONNECT"})
 
-    def on_step_adjust(self, user_data):
+    def on_step_adjust(self, sender, app_data, user_data):
         """Adjust the simulated step position for a control action."""
         action_key, direction = user_data
         step = 10 * direction
