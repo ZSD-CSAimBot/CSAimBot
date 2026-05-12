@@ -570,10 +570,11 @@ void loop() {
         }
 
         else {
-          bool moveUp = (pressedKeys.indexOf('i') >= 0);
-          bool moveDown = (pressedKeys.indexOf('k') >= 0);
-          bool moveLeft = (pressedKeys.indexOf('j') >= 0);
-          bool moveRight = (pressedKeys.indexOf('l') >= 0);
+          // Swapped physical keyboard mapping to match physical CoreXY axes
+          bool moveUp = (pressedKeys.indexOf('l') >= 0);     // +Y
+          bool moveDown = (pressedKeys.indexOf('j') >= 0);   // -Y
+          bool moveLeft = (pressedKeys.indexOf('k') >= 0);   // -X
+          bool moveRight = (pressedKeys.indexOf('i') >= 0);  // +X
 
           // If no keyboard movement, use posX and posY joystick/mouse values
           if (!moveUp && !moveDown && !moveLeft && !moveRight) {

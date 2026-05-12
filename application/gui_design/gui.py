@@ -69,7 +69,7 @@ class GUI:
                 "start": "START", "cal": "CALIBRATE", "stop": "FORCE STOP",
                 "lang": "Language", "res": "Resolution", "port": "COM Port", "status_ok": "Status: OK","status_err": "Error: ",
                 "target": "Target Prioritization:", "logs": "System Logs:", "opencv": "Show OpenCV window",
-                "lpm": "Press LMB", "ppm": "Press RMB", "test": "Gripper Test", "set0": "Set 0",
+                "lmb": "Press LMB", "rmb": "Press RMB", "gripper": "Gripper Test", "set0": "Set 0",
                 "plot_data": "Data", "plot_vision": "Vision Data", "speed": "Speed",
                 "stat_lmb_title": "LMB Clicked",
                 "stat_lmb_desc": "How many times has the bot clicked left mouse button",
@@ -90,7 +90,7 @@ class GUI:
                 "start": "START", "cal": "KALIBRUJ", "stop": "WYMUŚ STOP",
                 "lang": "Język", "res": "Rozdzielczość", "port": "Port COM", "status_ok": "Status: OK", "status_err": "Błąd: ",
                 "target": "Priorytet Celu:", "logs": "Logi Systemowe:", "opencv": "Pokaż okno OpenCV",
-                "lpm": "Wciśnij LPM", "ppm": "Wciśnij PPM", "test": "Test Chwytaka", "set0": "Ustaw 0",
+                "lmb": "Wciśnij LPM", "rmb": "Wciśnij PPM", "gripper": "Test Chwytaka", "set0": "Ustaw 0",
                 "plot_data": "Dane", "plot_vision": "Dane Wizyjne", "speed": "Prędkość",
                 "stat_lmb_title": "Kliknięcia LPM", "stat_lmb_desc": "Ile razy bot kliknął lewy przycisk myszy",
                 "stat_rmb_title": "Kliknięcia PPM", "stat_rmb_desc": "Ile razy bot kliknął prawy przycisk myszy",
@@ -411,8 +411,8 @@ class GUI:
             ("btn_start_home", "start"), ("btn_start_control", "start"),
             ("btn_cal_home", "cal"), ("btn_cal_control", "cal"),
             ("btn_stop_home", "stop"), ("btn_stop_control", "stop"),
-            ("btn_lpm_control", "lpm"), ("btn_ppm_control", "ppm"), ("btn_test_control", "test"),
-            ("btn_set0_lpm", "set0"), ("btn_set0_ppm", "set0"), ("btn_set0_test", "set0")
+            ("btn_lmb_control", "lmb"), ("btn_rmb_control", "rmb"), ("btn_gripper_control", "gripper"),
+            ("btn_set0_lmb", "set0"), ("btn_set0_rmb", "set0"), ("btn_set0_gripper", "set0")
         ]
         for tag, dict_key in button_tags:
             if dpg.does_item_exist(tag):
@@ -673,7 +673,7 @@ class GUI:
                             dpg.add_spacer(width=40)
 
                             with dpg.group():
-                                actions = [("Wciśnij LPM", "lpm"), ("Wciśnij PPM", "ppm"), ("Test Chwytaka", "test")]
+                                actions = [("Press LMB", "lmb"), ("Press RMB", "rmb"), ("Gripper Test", "gripper")]
                                 for action_label, action_key in actions:
                                     with dpg.group(horizontal=True):
                                         btn_action = dpg.add_button(label=action_label, width=200, height=45,
@@ -990,20 +990,19 @@ class GUI:
         step = 10 * direction
         simulated_key = ""
 
-        if action_key == "lpm":
+        if action_key == "lmb":  # X-axis
             self.pos_x += step
             simulated_key = "l" if direction > 0 else "j"
-        elif action_key == "ppm":
+        elif action_key == "rmb":  # Y-axis
             self.pos_y += step
             simulated_key = "i" if direction > 0 else "k"
-        elif action_key == "test":
+        elif action_key == "gripper":  # Z-axis
             self.pos_z += step
-            simulated_key = "z"
+            simulated_key = "z" if direction > 0 else "x"
 
         self._update_coords_display()
 
         if self.is_connected:
-            # Manual jog commands should not include the last AI target offset.
             self.comms_pipe.send({"cmd": "SEND", "value": f"0,0,{self.current_speed},{simulated_key}"})
 
     def on_set_zero(self, sender, app_data, user_data):
@@ -1012,9 +1011,12 @@ class GUI:
         Args:
             user_data: Action key identifying which axis to reset.
         """
-        if user_data == "lpm": self.pos_x = 0
-        elif user_data == "ppm": self.pos_y = 0
-        elif user_data == "test": self.pos_z = 0
+        if user_data == "lmb":
+            self.pos_x = 0
+        elif user_data == "rmb":
+            self.pos_y = 0
+        elif user_data == "gripper":
+            self.pos_z = 0
 
         self._update_coords_display()
 
@@ -1195,35 +1197,38 @@ class GUI:
         while dpg.is_dearpygui_running():
             current_key = ""
 
-            # Existing directional buttons (jogging)
-            if dpg.does_item_exist("btn_left_lpm") and dpg.is_item_active("btn_left_lpm"):
+            # X-Axis Jogging (LMB row)
+            if dpg.does_item_exist("btn_left_lmb") and dpg.is_item_active("btn_left_lmb"):
                 current_key = "j"
-            elif dpg.does_item_exist("btn_right_lpm") and dpg.is_item_active("btn_right_lpm"):
+            elif dpg.does_item_exist("btn_right_lmb") and dpg.is_item_active("btn_right_lmb"):
                 current_key = "l"
-            elif dpg.does_item_exist("btn_left_ppm") and dpg.is_item_active("btn_left_ppm"):
+
+            # Y-Axis Jogging (RMB row)
+            elif dpg.does_item_exist("btn_left_rmb") and dpg.is_item_active("btn_left_rmb"):
                 current_key = "k"
-            elif dpg.does_item_exist("btn_right_ppm") and dpg.is_item_active("btn_right_ppm"):
+            elif dpg.does_item_exist("btn_right_rmb") and dpg.is_item_active("btn_right_rmb"):
                 current_key = "i"
-            elif dpg.does_item_exist("btn_left_test") and dpg.is_item_active("btn_left_test"):
+
+            # Z-Axis Jogging (Gripper row)
+            elif dpg.does_item_exist("btn_left_gripper") and dpg.is_item_active("btn_left_gripper"):
                 current_key = "x"
-            elif dpg.does_item_exist("btn_right_test") and dpg.is_item_active("btn_right_test"):
+            elif dpg.does_item_exist("btn_right_gripper") and dpg.is_item_active("btn_right_gripper"):
                 current_key = "z"
 
-            # ADDED: Main action buttons
-            elif dpg.does_item_exist("btn_lpm_control") and dpg.is_item_active("btn_lpm_control"):
+            # Main action buttons (Relays & Servo)
+            elif dpg.does_item_exist("btn_lmb_control") and dpg.is_item_active("btn_lmb_control"):
                 current_key = "1"
-            elif dpg.does_item_exist("btn_ppm_control") and dpg.is_item_active("btn_ppm_control"):
+            elif dpg.does_item_exist("btn_rmb_control") and dpg.is_item_active("btn_rmb_control"):
                 current_key = "2"
-            elif dpg.does_item_exist("btn_test_control") and dpg.is_item_active("btn_test_control"):
+            elif dpg.does_item_exist("btn_gripper_control") and dpg.is_item_active("btn_gripper_control"):
                 current_key = "v"
 
             if not current_key:
-                # Keyboard input is already forwarded by comms_worker; mouse actions take priority here.
+                # Keyboard input is already forwarded by comms_worker
                 pass
 
             if current_key != last_sent_key:
                 if self.is_connected:
-                    # Manual mouse-button jog/action commands should not include AI offsets.
                     self.comms_pipe.send({
                         "cmd": "SEND",
                         "value": f"0,0,{self.current_speed},{current_key}"
