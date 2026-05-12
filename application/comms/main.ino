@@ -535,7 +535,10 @@ void loop() {
     String data = String(serialBuffer);
     data.trim();
 
-    if (data.length() > 0) {
+    if (data == "ESP32-CHECK") {
+      Serial.println("ESP32-READY");
+    }
+    else if (data.length() > 0) {
       int commaIndexOne = data.indexOf(',');
       int commaIndexTwo = data.indexOf(',', commaIndexOne + 1);
       int commaIndexThree = data.indexOf(',', commaIndexTwo + 1);
