@@ -53,12 +53,37 @@ class SerialCommsModule:
             self.esp.dtr = False
             self.esp.rts = False
             self.esp.open()
-            print(f"Connected on {self.port}.")
-            time.sleep(1)
-            return True
+            time.sleep(1.5)
+            if self.check_connection(self.esp, self.port):
+                return True
+            else:
+                self.esp.close()
+                return False
         except serial.SerialException as e:
             print(f"Connection error {self.port}\n{e}")
             return False
+
+    def check_connection(self, esp, port):
+        """
+        Check if ESP32 is responsive by sending a test command and waiting for a specific response.
+        Args:
+            esp: Opened serial connection to ESP32
+            port: Serial port name
+        Returns:
+            True if ESP32 is responsive, False otherwise
+        """
+        esp.reset_input_buffer()
+        esp.write(f"ESP32-CHECK\r".encode('utf-8'))
+        esp.flush()
+        start_time = time.time()
+        while time.time() - start_time < 5.0:
+            if esp.in_waiting > 0:
+                response = esp.readline().decode('utf-8', errors='ignore').strip()
+                if response == "ESP32-READY":
+                    print(f"Connected on {port}.")
+                    return True
+        print(f"Connection error {port}: No response from ESP32.")
+        return False
 
     def send_command(self, command):
         """
