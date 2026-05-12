@@ -548,6 +548,15 @@ void loop() {
 
         pressedKeys = data.substring(commaIndexThree + 1);
 
+        Serial.print("CMD posX=");
+        Serial.print(posX);
+        Serial.print(" posY=");
+        Serial.print(posY);
+        Serial.print(" speed=");
+        Serial.print(speedValue);
+        Serial.print(" keys=");
+        Serial.println(pressedKeys);
+
         if (speedValue >= 1 && speedValue <= 100) {
           delayCoreXY = (int)(1000000.0 / (100.0 + ((speedValue - 1.0) / 99.0) * 9900.0));
         }
@@ -577,10 +586,12 @@ void loop() {
               moveLeft = true;
             }
 
+            // OpenCV/camera coordinates: positive Y means the target is LOWER on screen.
+            // Therefore posY > 0 should move the robot DOWN, not UP.
             if (posY > deadzoneY) {
-              moveUp = true;
-            } else if (posY < -deadzoneY) {
               moveDown = true;
+            } else if (posY < -deadzoneY) {
+              moveUp = true;
             }
           }
 

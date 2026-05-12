@@ -20,9 +20,17 @@ if __name__ == "__main__":
     mp.freeze_support()
 
     # Prepare the trained TensorRT model used by the vision worker.
-    MODEL_PATH = os.path.abspath('application/detection_system/yolo/trained_model.engine')
+    # Get the application directory (where this file is located)
+    APP_DIR = os.path.dirname(os.path.abspath(__file__))
+    MODEL_PATH = os.path.join(APP_DIR, 'detection_system', 'yolo', 'trained_model.engine')
+    
     if not os.path.exists(MODEL_PATH):
-        export_model_to_trt()
+        # Try to export from PT model if engine doesn't exist
+        PT_MODEL_PATH = os.path.join(APP_DIR, 'detection_system', 'yolo', 'trained_model.pt')
+        if os.path.exists(PT_MODEL_PATH):
+            export_model_to_trt()
+        else:
+            print(f"ERROR: Model not found at {PT_MODEL_PATH}")
 
     # Create the inter-process communication channels.
     gui_vision_conn, vision_worker_conn = mp.Pipe()
@@ -55,7 +63,20 @@ if __name__ == "__main__":
     app = GUI(gui_vision_conn, gui_comms_conn, gui_sim_conn)
     app.run()
 
+    # Send shutdown signals to worker processes
+    gui_vision_conn.send({"cmd": "QUIT"})
+    gui_comms_conn.send({"cmd": "QUIT"})
+    gui_sim_conn.send({"cmd": "QUIT"})
+
     # Wait for worker shutdown after the GUI exits.
-    vision_process.join()
-    comms_process.join()
-    sim_process.join()
+    vision_process.join(timeout=2)
+    comms_process.join(timeout=2)
+    sim_process.join(timeout=2)
+
+    # Terminate any processes that didn't exit gracefully
+    if vision_process.is_alive():
+        vision_process.terminate()
+    if comms_process.is_alive():
+        comms_process.terminate()
+    if sim_process.is_alive():
+        sim_process.terminate()

@@ -24,10 +24,8 @@ class GUI:
         Args:
             vision_pipe: Pipe used to communicate with the vision worker.
             comms_pipe: Pipe used to communicate with the serial worker.
-             sim_pipe: Pipe used to communicate with the simulation worker.
+            sim_pipe: Pipe used to communicate with the simulation worker.
         """
-        self.auto_tracking = False
-        self.PX_TO_CM = 0.005
         self.pipe = vision_pipe 
         self.comms_pipe = comms_pipe
         self.sim_pipe = sim_pipe
@@ -41,17 +39,17 @@ class GUI:
         self.connection_msg = "Connected to ESP32" if self.is_connected else "No connection to ESP32"
         self.connection_state = "disconnected"
 
+        # Manual/display coordinates used by the GUI controls only.
         self.pos_x = 0
         self.pos_y = 0
         self.pos_z = 0
+
+        # Vision target offsets from aimbot.py.
+        # These must NOT be mixed with manual jog coordinates.
+        self.target_offset_x = 0
+        self.target_offset_y = 0
+        self.manual_keys = ""
         self.current_speed = 75
-        
-        # YOLO tracking - offsets od środka ekranu (w pixelach)
-        self.yolo_offset_x = 0
-        self.yolo_offset_y = 0
-        self.yolo_target_detected = False
-        self.last_auto_movement_time = 0
-        self.auto_movement_interval = 0.05  # Co ile sekund wysyłać komendy (50ms)
 
         self.active_page_tag = "page_home"
         self.nav_config = {
@@ -982,7 +980,7 @@ class GUI:
             self.update_connection_display()
             self.comms_pipe.send({"cmd": "DISCONNECT"})
 
-    def on_step_adjust(self, user_data):
+    def on_step_adjust(self, sender, app_data, user_data):
         """Adjust the simulated step position for a control action.
 
         Args:
@@ -1005,7 +1003,8 @@ class GUI:
         self._update_coords_display()
 
         if self.is_connected:
-            self.comms_pipe.send({"cmd": "SEND", "value": f"{self.pos_x},{self.pos_y},{self.current_speed},{simulated_key}"})
+            # Manual jog commands should not include the last AI target offset.
+            self.comms_pipe.send({"cmd": "SEND", "value": f"0,0,{self.current_speed},{simulated_key}"})
 
     def on_set_zero(self, sender, app_data, user_data):
         """Reset the selected control axis to zero.
@@ -1020,7 +1019,7 @@ class GUI:
         self._update_coords_display()
 
         if self.is_connected:
-            self.comms_pipe.send({"cmd": "SEND", "value": f"{self.pos_x},{self.pos_y},{self.current_speed},"})
+            self.comms_pipe.send({"cmd": "SEND", "value": f"0,0,{self.current_speed},"})
 
     def _update_coords_display(self):
         """Refresh all coordinate readouts in the UI."""
@@ -1032,51 +1031,15 @@ class GUI:
             if dpg.does_item_exist(tag_z): dpg.set_value(tag_z, str(self.pos_z))
 
     def on_start(self):
-        """Starts the vision process and enables auto-aim logic."""
-        self.auto_tracking = True
-        self.yolo_target_detected = False
+        """Start the vision worker."""
         self.pipe.send({"cmd": "START"})
-        self.add_log("<System> Vision started. Auto-tracking ENABLED.", color=[0, 255, 0])
-    
-    def _convert_yolo_offset_to_movement_command(self):
-        """
-        Convert YOLO pixel offset to robot movement command.
-        
-        Returns:
-            Command string with movement keys (empty if offset too small)
-        """
-        if not self.yolo_target_detected:
-            return ""
-        
-        # Deadzone - ignoruj małe odchylenia (w pixelach)
-        DEADZONE_PX = 20
-        
-        command = ""
-        
-        # X-axis (left-right): ujemny = lewo, dodatni = prawo
-        if self.yolo_offset_x < -DEADZONE_PX:
-            command += "j"  # left
-        elif self.yolo_offset_x > DEADZONE_PX:
-            command += "l"  # right
-        
-        # Y-axis (up-down): ujemny = góra, dodatni = dół
-        if self.yolo_offset_y < -DEADZONE_PX:
-            command += "i"  # up
-        elif self.yolo_offset_y > DEADZONE_PX:
-            command += "k"  # down
-        
-        return command
 
     def on_stop(self):
-        """Stops the vision process, closes OpenCV window, and halts all motors."""
-        self.auto_tracking = False
-        # Send STOP to vision process to close OpenCV window (handled in vision_worker)
+        """Stop the vision worker and send an emergency stop to the controller."""
         self.pipe.send({"cmd": "STOP"})
-
         if self.is_connected:
-            # Send emergency stop command 'p' to ESP32
             self.comms_pipe.send({"cmd": "SEND", "value": f"0,0,{self.current_speed},p"})
-            self.add_log("<System> FORCE STOP: Vision killed and motors halted.", color=[255, 0, 0])
+            self.add_log("<System> EMERGENCY STOP ACTIVATED", color=[255, 0, 0])
 
     def on_calibrate(self):
         """Start calibration in the vision worker."""
@@ -1109,25 +1072,41 @@ class GUI:
                 dpg.configure_item(stop_tag, enabled=is_running and not is_pending)
 
     def poll_pipe(self):
-        """Process messages from the worker processes."""
+        """Process messages from the worker processes.
+
+        Important protocol rule:
+        - Vision offsets from aimbot.py are stored in target_offset_x/y.
+        - Manual keys are sent with 0,0 offset so old AI offsets cannot mix with jog commands.
+        - If no manual key is active, each valid vision offset is forwarded to ESP32 as AIM input.
+        """
         while self.running:
             while self.pipe.poll():
                 msg = self.pipe.recv()
-                # gui.py - snippet of the poll_pipe method
-
                 if msg.get("type") == "offsets":
                     x_val = msg.get("x")
                     y_val = msg.get("y")
+                    
+                    # DEBUG: Print all data from aimbot.py
+                    print(f"<AIMBOT> Received message: {msg}", flush=True)
+                    print(f"<AIMBOT> x_val={x_val}, y_val={y_val}", flush=True)
 
-                    # Ignore if no target is detected (YOLO returns "-")
-                    if x_val == "-" or y_val == "-":
-                        continue
+                    # aimbot.py uses "-" when no target is detected.
+                    if x_val is None or y_val is None or x_val == "-" or y_val == "-":
+                        self.target_offset_x = 0
+                        self.target_offset_y = 0
+                        print(f"<AIMBOT> No target detected", flush=True)
+                    else:
+                        try:
+                            self.target_offset_x = int(x_val)
+                            self.target_offset_y = int(y_val)
+                            print(f"<AIMBOT> Target found: target_offset_x={self.target_offset_x}, target_offset_y={self.target_offset_y}", flush=True)
+                        except (TypeError, ValueError):
+                            self.target_offset_x = 0
+                            self.target_offset_y = 0
+                            print(f"<AIMBOT> Error converting values to int", flush=True)
 
-                    # 1. Update position inside GUI for user view
-                    self.pos_x = x_val
-                    self.pos_y = y_val
-
-                    for axis, val in [("x", x_val), ("y", y_val)]:
+                    # Display latest AI offset in coordinate fields.
+                    for axis, val in [("x", self.target_offset_x), ("y", self.target_offset_y)]:
                         tag_control = f"coord_{axis}_control"
                         tag_home = f"coord_{axis}_home"
                         if dpg.does_item_exist(tag_control):
@@ -1135,34 +1114,14 @@ class GUI:
                         if dpg.does_item_exist(tag_home):
                             dpg.set_value(tag_home, str(val))
 
-                    # 2. AUTOMATIC PHYSICAL CONTROL
-                    if self.auto_tracking and self.is_connected:
-                        # Map pixel offset to key commands for ESP32
-                        # ESP32 in main.ino interprets i, k, j, l as directions
-
-                        auto_keys = ""
-                        deadzone = 5  # Margin of error in pixels to prevent robot jitter
-
-                        if x_val > deadzone:
-                            auto_keys += "l"  # Move right
-                        elif x_val < -deadzone:
-                            auto_keys += "j"  # Move left
-
-                        if y_val > deadzone:
-                            auto_keys += "k"  # Move down (according to screen layout)
-                        elif y_val < -deadzone:
-                            auto_keys += "i"  # Move up
-
-                        # Optional: Automatic shoot trigger if the target is close to the center
-                        if abs(x_val) < 10 and abs(y_val) < 10:
-                            auto_keys += "1"  # Relay/shoot activation
-
-                        # Send data packet to the serial port
-                        # Format: X, Y, SPEED, KEYS
+                    # If the user is not manually jogging, forward AI target offsets to ESP32.
+                    # Empty key field means main.ino will use posX/posY as aim/joystick input.
+                    if self.is_connected and not self.manual_keys:
                         self.comms_pipe.send({
                             "cmd": "SEND",
-                            "value": f"{x_val},{y_val},{self.current_speed},{auto_keys}"
+                            "value": f"{self.target_offset_x},{self.target_offset_y},{self.current_speed},"
                         })
+                        print(f"<AIMBOT> Sent to ESP32: {self.target_offset_x},{self.target_offset_y},{self.current_speed}", flush=True)
 
             while self.comms_pipe.poll():
                 msg = self.comms_pipe.recv()
@@ -1171,14 +1130,20 @@ class GUI:
                     self.is_connected = (self.connection_state == "connected")
                     self.update_connection_display()
                 elif msg.get("type") == "keyboard":
-                    keys = msg.get("keys")
+                    keys = msg.get("keys") or ""
+                    self.manual_keys = keys
 
-                    # Jeśli auto-tracking jest aktywny, użyj komend YOLO zamiast klawiatury
-                    if self.auto_tracking and self.yolo_target_detected:
-                        keys = self._convert_yolo_offset_to_movement_command()
-                    
-                    self.comms_pipe.send(
-                        {"cmd": "SEND", "value": f"{self.pos_x},{self.pos_y},{self.current_speed},{keys}"})
+                    if self.is_connected:
+                        if keys:
+                            # Manual keyboard input has priority and must not include AI offset.
+                            self.comms_pipe.send(
+                                {"cmd": "SEND", "value": f"0,0,{self.current_speed},{keys}"}
+                            )
+                        else:
+                            # On key release, immediately resume AI offset mode or stop if no target.
+                            self.comms_pipe.send(
+                                {"cmd": "SEND", "value": f"{self.target_offset_x},{self.target_offset_y},{self.current_speed},"}
+                            )
 
                     display_text = f"[ {keys.upper()} ]" if keys else "[ BRAK ]"
                     if dpg.does_item_exist("current_keys_text"):
@@ -1212,7 +1177,7 @@ class GUI:
                             color = [255, 80, 80]
                         self.add_log(message, color)
                     self.update_simulation_display()
-
+                
             time.sleep(0.01)
 
             now = time.time()
@@ -1226,22 +1191,9 @@ class GUI:
         dpg.show_viewport()
 
         last_sent_key = ""
-        last_auto_send_time = time.time()
 
         while dpg.is_dearpygui_running():
             current_key = ""
-            current_time = time.time()
-
-            # Jeśli auto-tracking jest aktywny, wysyłaj komendy YOLO regularnie
-            if self.auto_tracking and self.yolo_target_detected and self.is_connected:
-                if current_time - last_auto_send_time >= self.auto_movement_interval:
-                    auto_command = self._convert_yolo_offset_to_movement_command()
-                    if auto_command:
-                        self.comms_pipe.send({
-                            "cmd": "SEND",
-                            "value": f"{self.pos_x},{self.pos_y},{self.current_speed},{auto_command}"
-                        })
-                        last_auto_send_time = current_time
 
             # Existing directional buttons (jogging)
             if dpg.does_item_exist("btn_left_lpm") and dpg.is_item_active("btn_left_lpm"):
@@ -1271,10 +1223,10 @@ class GUI:
 
             if current_key != last_sent_key:
                 if self.is_connected:
-                    # Protocol: X,Y,SPEED,KEY
+                    # Manual mouse-button jog/action commands should not include AI offsets.
                     self.comms_pipe.send({
                         "cmd": "SEND",
-                        "value": f"{self.pos_x},{self.pos_y},{self.current_speed},{current_key}"
+                        "value": f"0,0,{self.current_speed},{current_key}"
                     })
                 last_sent_key = current_key
 
