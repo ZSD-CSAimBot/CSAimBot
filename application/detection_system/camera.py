@@ -1,9 +1,18 @@
+"""Camera abstraction used by the detection system."""
+
 import sys
 import torch
 import numpy as np
 
+
 class CameraProvider:
     def __init__(self, region):
+        """
+        Initialize the camera backend for the active platform.
+
+        Args:
+            region: Capture region in the form (left, top, right, bottom).
+        """
         self.platform = sys.platform
         self.region = region
         
@@ -23,7 +32,10 @@ class CameraProvider:
 
     def grab_gpu_tensor(self):
         """
-        Captures a frame and returns it as a PyTorch tensor on the GPU.
+        Capture a frame and return it as a GPU tensor.
+
+        Returns:
+            A PyTorch tensor containing the frame on the GPU, or None if capture fails.
         """
         if self.platform == 'win32':
             frame = self.camera.grab()
@@ -39,6 +51,7 @@ class CameraProvider:
         return None
 
     def release(self):
+        """Release the underlying capture backend."""
         if self.platform == 'win32':
             self.camera.release()
         elif self.platform.startswith('linux'):

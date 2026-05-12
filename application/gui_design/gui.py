@@ -6,7 +6,6 @@ import random
 import dearpygui.dearpygui as dpg
 import time
 import serial.tools.list_ports
-
 """Desktop GUI for CSAimBot control, telemetry, and settings."""
 
 # IMPORTANT:
@@ -180,7 +179,11 @@ class GUI:
             print(f"Error during resolution change: {e}")
 
     def switch_page(self, sender, app_data, user_data):
-        """Switch the visible page in the main window."""
+        """Switch the visible page in the main window.
+
+        Args:
+            user_data: Tag of the page that should be shown.
+        """
         pages = ["page_home", "page_control", "page_stat", "page_settings"]
         for page in pages:
             if dpg.does_item_exist(page):
@@ -216,7 +219,17 @@ class GUI:
                 dpg.bind_font(self.font_720)
 
     def create_rbtn_theme(self, bg_color, hover_color, dot_color, text_color):
-        """Create a radio button theme."""
+        """Create a radio button theme.
+
+        Args:
+            bg_color: Normal frame background color.
+            hover_color: Hover state background color.
+            dot_color: Check mark color.
+            text_color: Label text color.
+
+        Returns:
+            Dear PyGui theme identifier.
+        """
         with dpg.theme() as theme_id:
             with dpg.theme_component(dpg.mvRadioButton):
                 dpg.add_theme_color(dpg.mvThemeCol_FrameBg, bg_color)
@@ -318,7 +331,17 @@ class GUI:
         self.invisible_btn_theme = self.create_btn_theme([0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0])
 
     def create_btn_theme(self, color, hover_color, active_color, text_color=[255, 255, 255]):
-        """Create a button theme."""
+        """Create a button theme.
+
+        Args:
+            color: Default button color.
+            hover_color: Hover state color.
+            active_color: Pressed state color.
+            text_color: Button text color.
+
+        Returns:
+            Dear PyGui theme identifier.
+        """
         with dpg.theme() as theme_id:
             with dpg.theme_component(dpg.mvButton):
                 dpg.add_theme_color(dpg.mvThemeCol_Button, color)
@@ -411,7 +434,13 @@ class GUI:
             dpg.configure_item("group_conn_text_placeholder", show=not self.sidebar_expanded)
 
     def add_nav_item(self, icon_or_texture_tag, text_label, page_tag):
-        """Add a navigation button and label pair."""
+        """Add a navigation button and label pair.
+
+        Args:
+            icon_or_texture_tag: Texture tag or fallback label for the button.
+            text_label: Visible text shown in the expanded sidebar.
+            page_tag: Tag of the page to show when selected.
+        """
         with dpg.group(horizontal=True):
             if dpg.does_alias_exist(icon_or_texture_tag):
                 btn = dpg.add_image_button(texture_tag=icon_or_texture_tag, width=50, height=50,
@@ -429,7 +458,11 @@ class GUI:
         dpg.add_spacer(height=5, tag=self.rs(h=5))
 
     def on_language_change(self, sender, app_data):
-        """Apply the selected language to the visible labels."""
+        """Apply the selected language to the visible labels.
+
+        Args:
+            app_data: Selected language key.
+        """
         self.current_lang = app_data
         t = self.lang_dict[self.current_lang]
 
@@ -518,7 +551,11 @@ class GUI:
             dpg.set_value(self.conn_text, display_text)
 
     def add_sim_controls(self, suffix):
-        """Add simulation start and stop buttons for a page."""
+        """Add simulation start and stop buttons for a page.
+
+        Args:
+            suffix: Page suffix used to build unique widget tags.
+        """
         with dpg.group(horizontal=True):
             dpg.add_spacer(width=14, tag=self.rs(w=14))
             btn_start_sim = dpg.add_button(
@@ -979,10 +1016,14 @@ class GUI:
         """Update the active speed setting."""
         self.current_speed = int(app_data)
         t = self.lang_dict[self.current_lang]
-        dpg.set_value("speed_text_label_control", f"{t['speed']}: {app_data}%")
+        dpg.set_value("speed_text_label_control", f"{t['speed']}: {self.current_speed}%")
 
     def on_target_change(self, app_data):
-        """Update target prioritization across the UI."""
+        """Update target prioritization across the UI.
+
+        Args:
+            app_data: Selected target mode.
+        """
         for tag in ["rbtn_target_home", "rbtn_target_control"]:
             if dpg.does_item_exist(tag):
                 dpg.set_value(tag, app_data)
@@ -997,7 +1038,11 @@ class GUI:
         self.pipe.send({"cmd": "SET_TARGET", "value": app_data})
 
     def on_debug_toggle(self, sender, app_data):
-        """Toggle the OpenCV debug preview."""
+        """Toggle the OpenCV debug preview.
+
+        Args:
+            app_data: Checkbox state.
+        """
         for tag in ["chk_debug_home", "chk_debug_control"]:
             if dpg.does_item_exist(tag):
                 dpg.set_value(tag, app_data)
@@ -1005,7 +1050,13 @@ class GUI:
         self.pipe.send({"cmd": "DEBUG", "value": app_data})
 
     def add_log(self, text, color=[255, 255, 255], parent=None):
-        """Append a log line to the available log panel."""
+        """Append a log line to the available log panel.
+
+        Args:
+            text: Log message text.
+            color: Text color for the log line.
+            parent: Optional parent group tag.
+        """
         if parent:
             if dpg.does_item_exist(parent):
                 dpg.add_text(text, parent=parent, color=color)
@@ -1023,7 +1074,11 @@ class GUI:
                 dpg.configure_item(tag, label=StatsManager.format_value(key, self.stats_manager.get(key)))
 
     def on_port_change(self, sender, app_data):
-        """Request a serial port change."""
+        """Request a serial port change.
+
+        Args:
+            app_data: Selected COM port.
+        """
         self.connection_state = "connecting"
         self.update_connection_display()
         self.comms_pipe.send({"cmd": "CHANGE_PORT", "value": app_data})
@@ -1038,9 +1093,14 @@ class GUI:
             self.connection_state = "disconnecting"
             self.update_connection_display()
             self.comms_pipe.send({"cmd": "DISCONNECT"})
-
+            
+            
     def on_step_adjust(self, sender, app_data, user_data):
-        """Adjust the simulated step position for a control action."""
+        """Adjust the simulated step position for a control action.
+
+        Args:
+            user_data: Tuple of action key and direction.
+        """
         action_key, direction = user_data
         step = 10 * direction
         simulated_key = ""
@@ -1139,9 +1199,9 @@ class GUI:
                         tag_control = f"coord_{axis}_control"
                         tag_home = f"coord_{axis}_home"
                         if axis == "x":
-                            self.pos_x = int(val)
+                            self.pos_x = val
                         elif axis == "y":
-                            self.pos_y = int(val)
+                            self.pos_y = val
                         if dpg.does_item_exist(tag_control):
                             dpg.set_value(tag_control, str(val))
                         if dpg.does_item_exist(tag_home):

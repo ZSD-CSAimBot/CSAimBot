@@ -3,7 +3,7 @@ FROM ros:jazzy
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
 
-# Dodano instalację pakietu 'dos2unix' na końcu listy
+# Added installation of 'dos2unix' package at the end of the list
 RUN apt-get update && apt-get dist-upgrade -y && apt-get install -y \
     python3-colcon-common-extensions \
     ros-jazzy-ros-gz-sim \
@@ -22,7 +22,7 @@ RUN apt-get update && apt-get dist-upgrade -y && apt-get install -y \
 WORKDIR /sim_ws
 COPY . /sim_ws
 
-# Naprawa znaków końca linii i nadanie uprawnień w jednym kroku
+# Fix line endings and set execute permissions for the startup script
 RUN dos2unix /sim_ws/start_sim.sh && chmod +x /sim_ws/start_sim.sh
 
 CMD ["/bin/bash", "/sim_ws/start_sim.sh"]
