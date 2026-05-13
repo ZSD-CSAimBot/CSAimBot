@@ -47,7 +47,7 @@ bool isCommandReady = false;
 
 int delayCoreXY = 800;
 const int delayZ = 300;
-int homingDelay = 1500;
+int homingDelay = 500;
 
 bool motor1Running = false;
 bool motor2Running = false;
@@ -68,20 +68,23 @@ unsigned long lastEncoderPrint = 0;
 
 float stepsPerCM = 296.30;
 
+bool isZUp = false;
+long stepsForZDrop = 4000;
+
 // ============================================================================
 // ENCODER AXIS SIGN CALIBRATION
 // ============================================================================
 //
-// Po homingu:
-// - ruch w lewo powinien zmniejszać X, czyli X idzie w minus
-// - ruch w prawo powinien zwiększać X, czyli X idzie do 0
-// - ruch w dół powinien zwiększać Y, czyli Y idzie do 24
-// - ruch w górę powinien zmniejszać Y, czyli Y idzie do 0
+// After homing:
+// - moving left should decrease X (towards 0)
+// - moving right should increase X (towards 24.5)
+// - moving down should decrease Y (towards 0)
+// - moving up should increase Y (towards 28.5)
 //
-// Jeśli jest odwrotnie, zmień SIGN_X albo SIGN_Y z 1 na -1.
+// If it behaves inversely, change SIGN_X or SIGN_Y from 1 to -1.
 
 const int SIGN_X = 1;
-const int SIGN_Y = 1;
+const int SIGN_Y = -1;
 
 // ============================================================================
 // SERVO
@@ -102,16 +105,14 @@ unsigned long lastLimitNotify = 0;
 // VIRTUAL WORKSPACE LIMITS
 // ============================================================================
 //
-// Po homingu i backoff:
-// X: od -28 cm do 0 cm
-// Y: od 0 cm do 24 cm
+// After homing and back-off:
+// X: from 0.00 cm to 24.50 cm
+// Y: from 0.00 cm to 28.50 cm
 
-const float LIMIT_MIN_X = -28.50;
-const float LIMIT_MAX_X = 0.00;
+const float LIMIT_MIN_X = 0.00;
+const float LIMIT_MAX_X = 24.50;
 const float LIMIT_MIN_Y = 0.00;
-const float LIMIT_MAX_Y = 24.50;
-
-// Margines bezpieczeństwa, żeby nie dobijać idealnie do końca
+const float LIMIT_MAX_Y = 28.50;
 const float LIMIT_MARGIN_CM = 0.30;
 
 int posX = 0;
@@ -160,6 +161,60 @@ void moveZ(int dirZ) {
 }
 
 // ============================================================================
+// Z-AXIS CONTROL FUNCTIONS
+// ============================================================================
+
+void zLift() {
+  Serial.println("Lifting Z axis to endstop...");
+
+  // Set direction to move UP
+  digitalWrite(DIRZ_PIN, HIGH);
+
+  // Move UP until the limit switch is triggered (assuming LOW means pressed)
+  while (digitalRead(LIMIT_Z_PIN) == HIGH) {
+    digitalWrite(PULZ_PIN, HIGH);
+    delayMicroseconds(delayZ);
+    digitalWrite(PULZ_PIN, LOW);
+    delayMicroseconds(delayZ);
+  }
+
+  // Back off slightly to release the physical switch
+  digitalWrite(DIRZ_PIN, LOW);
+  for (int i = 0; i < 200; i++) {
+    digitalWrite(PULZ_PIN, HIGH);
+    delayMicroseconds(delayZ);
+    digitalWrite(PULZ_PIN, LOW);
+    delayMicroseconds(delayZ);
+  }
+
+  isZUp = true;
+  Serial.println("Z axis is UP and homed.");
+}
+
+void zDrop() {
+  if (!isZUp) {
+    Serial.println("Z axis is already DOWN or unknown state. Homing first...");
+    zLift();
+  }
+
+  Serial.println("Dropping Z axis...");
+
+  // Set direction to move DOWN
+  digitalWrite(DIRZ_PIN, LOW);
+
+  // Move down by exactly the defined number of steps
+  for (long i = 0; i < stepsForZDrop; i++) {
+    digitalWrite(PULZ_PIN, HIGH);
+    delayMicroseconds(delayZ);
+    digitalWrite(PULZ_PIN, LOW);
+    delayMicroseconds(delayZ);
+  }
+
+  isZUp = false;
+  Serial.println("Z axis is DOWN.");
+}
+
+// ============================================================================
 // DEBOUNCE HELPER FUNCTION
 // ============================================================================
 
@@ -187,8 +242,8 @@ void updateEncoderPosition() {
   long e1Count = encoder1.getCount();
   long e2Count = encoder2.getCount();
 
-  float ticksX = (e1Count - e2Count) / 2.0;
-  float ticksY = (e1Count + e2Count) / 2.0;
+  float ticksX = (e1Count + e2Count) / 2.0;
+  float ticksY = (e1Count - e2Count) / 2.0;
 
   currentPosX = SIGN_X * ticksX / stepsPerCM;
   currentPosY = SIGN_Y * ticksY / stepsPerCM;
@@ -208,21 +263,25 @@ bool isOutsideWorkspace() {
 }
 
 void applyContinuousWorkspaceLimit() {
-  if (isMovingLeft && currentPosX <= LIMIT_MIN_X + LIMIT_MARGIN_CM) {
-    stopAllMotors();
-    Serial.println("SOFT LIMIT: X MIN reached. Motors stopped.");
-  }
-
-  if (isMovingRight && currentPosX >= LIMIT_MAX_X - LIMIT_MARGIN_CM) {
+  // Moving LEFT goes deeper into the workspace (increases X)
+  if (isMovingLeft && currentPosX >= LIMIT_MAX_X - LIMIT_MARGIN_CM) {
     stopAllMotors();
     Serial.println("SOFT LIMIT: X MAX reached. Motors stopped.");
   }
 
+  // Moving RIGHT goes towards the origin (decreases X)
+  if (isMovingRight && currentPosX <= LIMIT_MIN_X + LIMIT_MARGIN_CM) {
+    stopAllMotors();
+    Serial.println("SOFT LIMIT: X MIN reached. Motors stopped.");
+  }
+
+  // Moving DOWN goes deeper into the workspace (increases Y)
   if (isMovingDown && currentPosY >= LIMIT_MAX_Y - LIMIT_MARGIN_CM) {
     stopAllMotors();
     Serial.println("SOFT LIMIT: Y MAX reached. Motors stopped.");
   }
 
+  // Moving UP goes towards the origin (decreases Y)
   if (isMovingUp && currentPosY <= LIMIT_MIN_Y + LIMIT_MARGIN_CM) {
     stopAllMotors();
     Serial.println("SOFT LIMIT: Y MIN reached. Motors stopped.");
@@ -230,14 +289,14 @@ void applyContinuousWorkspaceLimit() {
 }
 
 void blockMoveIfWouldExceedLimit(bool &moveUp, bool &moveDown, bool &moveLeft, bool &moveRight) {
-  if (moveLeft && currentPosX <= LIMIT_MIN_X + LIMIT_MARGIN_CM) {
+  if (moveLeft && currentPosX >= LIMIT_MAX_X - LIMIT_MARGIN_CM) {
     moveLeft = false;
-    Serial.println("BLOCKED: moveLeft - X MIN");
+    Serial.println("BLOCKED: moveLeft - X MAX");
   }
 
-  if (moveRight && currentPosX >= LIMIT_MAX_X - LIMIT_MARGIN_CM) {
+  if (moveRight && currentPosX <= LIMIT_MIN_X + LIMIT_MARGIN_CM) {
     moveRight = false;
-    Serial.println("BLOCKED: moveRight - X MAX");
+    Serial.println("BLOCKED: moveRight - X MIN");
   }
 
   if (moveDown && currentPosY >= LIMIT_MAX_Y - LIMIT_MARGIN_CM) {
@@ -249,6 +308,72 @@ void blockMoveIfWouldExceedLimit(bool &moveUp, bool &moveDown, bool &moveLeft, b
     moveUp = false;
     Serial.println("BLOCKED: moveUp - Y MIN");
   }
+}
+// ============================================================================
+// CENTERING FUNCTION
+// ============================================================================
+
+// ============================================================================
+// CENTERING FUNCTION
+// ============================================================================
+
+void moveToCenter(int speedDelay) {
+  Serial.println("Moving to workspace center...");
+
+  float targetX = LIMIT_MAX_X / 2.0;
+  float targetY = LIMIT_MAX_Y / 2.0;
+
+  while (true) {
+    updateEncoderPosition();
+
+    bool moveU = false;
+    bool moveD = false;
+    bool moveL = false;
+    bool moveR = false;
+
+    // Origin is Top-Right (0,0)
+    if (currentPosX < targetX - 0.15) moveL = true;
+    else if (currentPosX > targetX + 0.15) moveR = true;
+
+    if (currentPosY < targetY - 0.15) moveD = true;
+    else if (currentPosY > targetY + 0.15) moveU = true;
+
+    // Break the loop if we are within the deadzone
+    if (!moveU && !moveD && !moveL && !moveR) {
+      break;
+    }
+
+    // Apply CoreXY matrix
+    if (moveU && moveR) {
+      setMotorsXY(true, HIGH, false, LOW);
+    } else if (moveU && moveL) {
+      setMotorsXY(false, LOW, true, LOW);
+    } else if (moveD && moveR) {
+      setMotorsXY(false, LOW, true, HIGH);
+    } else if (moveD && moveL) {
+      setMotorsXY(true, LOW, false, LOW);
+    } else if (moveU) {
+      setMotorsXY(true, HIGH, true, LOW);
+    } else if (moveD) {
+      setMotorsXY(true, LOW, true, HIGH);
+    } else if (moveR) {
+      setMotorsXY(true, HIGH, true, HIGH);
+    } else if (moveL) {
+      setMotorsXY(true, LOW, true, LOW);
+    }
+
+    // Step generation with dynamic speed
+    if (motor1Running) digitalWrite(PUL1_PIN, HIGH);
+    if (motor2Running) digitalWrite(PUL2_PIN, HIGH);
+    delayMicroseconds(speedDelay);
+
+    if (motor1Running) digitalWrite(PUL1_PIN, LOW);
+    if (motor2Running) digitalWrite(PUL2_PIN, LOW);
+    delayMicroseconds(speedDelay);
+  }
+
+  stopAllMotors();
+  Serial.println("Center reached.");
 }
 
 // ============================================================================
@@ -263,10 +388,10 @@ void performHoming() {
   int debounceLimitMs = 30;
 
   // ==========================================================================
-  // 1. X-AXIS HOMING
+  // 1. Y-AXIS HOMING
   // ==========================================================================
 
-  Serial.println("Homing X...");
+  Serial.println("Homing Y...");
 
   digitalWrite(DIR1_PIN, HIGH);
   digitalWrite(DIR2_PIN, LOW);
@@ -281,9 +406,9 @@ void performHoming() {
     delayMicroseconds(homingDelay);
   }
 
-  Serial.println("X limit hit. Backing off...");
+  Serial.println("Y limit hit. Backing off...");
 
-  // Back-off X by around 1 cm
+  // Back-off Y by around 1 cm
   digitalWrite(DIR1_PIN, LOW);
   digitalWrite(DIR2_PIN, HIGH);
 
@@ -300,10 +425,10 @@ void performHoming() {
   delay(200);
 
   // ==========================================================================
-  // 2. Y-AXIS HOMING
+  // 2. X-AXIS HOMING
   // ==========================================================================
 
-  Serial.println("Homing Y...");
+  Serial.println("Homing X...");
 
   digitalWrite(DIR1_PIN, HIGH);
   digitalWrite(DIR2_PIN, HIGH);
@@ -318,9 +443,9 @@ void performHoming() {
     delayMicroseconds(homingDelay);
   }
 
-  Serial.println("Y limit hit. Backing off...");
+  Serial.println("X limit hit. Backing off...");
 
-  // Back-off Y by around 1 cm
+  // Back-off X by around 1 cm
   digitalWrite(DIR1_PIN, LOW);
   digitalWrite(DIR2_PIN, LOW);
 
@@ -352,6 +477,12 @@ void performHoming() {
   stopAllMotors();
 
   Serial.println("Homing OK! Position set to 0,0.");
+
+  // Wait half a second for stability, then move to the center
+  delay(500);
+  Serial.println("Centering.");
+  moveToCenter(500);
+
 }
 
 // ============================================================================
@@ -562,12 +693,16 @@ void loop() {
         else if (pressedKeys.indexOf('h') >= 0) {
           performHoming();
         }
+        else if (pressedKeys.indexOf('c') >= 0) {
+          moveToCenter(350);
+        }
 
         else {
-          bool moveUp = (pressedKeys.indexOf('i') >= 0);
-          bool moveDown = (pressedKeys.indexOf('k') >= 0);
-          bool moveLeft = (pressedKeys.indexOf('j') >= 0);
-          bool moveRight = (pressedKeys.indexOf('l') >= 0);
+          // Swapped physical keyboard mapping to match physical CoreXY axes
+          bool moveUp = (pressedKeys.indexOf('i') >= 0);     // +Y
+          bool moveDown = (pressedKeys.indexOf('k') >= 0);   // -Y
+          bool moveLeft = (pressedKeys.indexOf('j') >= 0);   // -X
+          bool moveRight = (pressedKeys.indexOf('l') >= 0);  // +X
 
           // If no keyboard movement, use posX and posY joystick/mouse values
           if (!moveUp && !moveDown && !moveLeft && !moveRight) {
@@ -604,7 +739,7 @@ void loop() {
           // ==================================================================
 
           if (moveUp && moveLeft) {
-            setMotorsXY(false, LOW, true, HIGH);
+            setMotorsXY(false, LOW, true, LOW);
             isMovingUp = true;
             isMovingLeft = true;
           }
@@ -622,28 +757,32 @@ void loop() {
           }
 
           else if (moveDown && moveRight) {
-            setMotorsXY(false, LOW, true, LOW);
+            setMotorsXY(false, LOW, true, HIGH);
             isMovingDown = true;
             isMovingRight = true;
           }
 
           else if (moveUp) {
-            setMotorsXY(true, HIGH, true, HIGH);
+            // Prosto w GÓRĘ (+Y)
+            setMotorsXY(true, HIGH, true, LOW);
             isMovingUp = true;
           }
 
           else if (moveDown) {
-            setMotorsXY(true, LOW, true, LOW);
+            // Prosto w DÓŁ (-Y)
+            setMotorsXY(true, LOW, true, HIGH);
             isMovingDown = true;
           }
 
           else if (moveLeft) {
-            setMotorsXY(true, LOW, true, HIGH);
+            // Prosto w LEWO (-X)
+            setMotorsXY(true, LOW, true, LOW);
             isMovingLeft = true;
           }
 
           else if (moveRight) {
-            setMotorsXY(true, HIGH, true, LOW);
+            // Prosto w PRAWO (+X)
+            setMotorsXY(true, HIGH, true, HIGH);
             isMovingRight = true;
           }
 
@@ -656,11 +795,11 @@ void loop() {
           // ==================================================================
 
           if (pressedKeys.indexOf('z') >= 0) {
-            moveZ(HIGH);
+            moveZ(HIGH); //DOWN
           }
 
           else if (pressedKeys.indexOf('x') >= 0) {
-            moveZ(LOW);
+            moveZ(LOW); //UP
           }
 
           else {
@@ -706,6 +845,16 @@ void loop() {
   }
 
   int currentDelay = (motorZRunning) ? delayZ : delayCoreXY;
+
+  if (!motorZRunning && (motor1Running != motor2Running)) {
+    // 0.707 ~ 1/sqrt(2)
+    currentDelay = (int)(currentDelay * 0.707);
+  }
+  const int MIN_SAFE_DELAY = 120;
+
+  if (currentDelay < MIN_SAFE_DELAY) {
+    currentDelay = MIN_SAFE_DELAY;
+  }
 
   if (motor1Running) digitalWrite(PUL1_PIN, HIGH);
   if (motor2Running) digitalWrite(PUL2_PIN, HIGH);

@@ -9,10 +9,12 @@ def export_model_to_trt():
      - The export process includes optimizations such as half-precision (FP16) and static input size for improved performance on NVIDIA GPUs.
     """
     print("Exporting YOLO model to TensorRT format...")
-    model_path = os.path.abspath('application/detection_system/yolo/trained_model.pt')
+    # Get the directory where this script is located
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    model_path = os.path.join(script_dir, 'trained_model.pt')
     if not os.path.exists(model_path):
-        raise FileNotFoundError("Model file not found. Please ensure 'application/detection_system/yolo/trained_model.pt' exists.")
-    
+        raise FileNotFoundError(f"Model file not found at {model_path}")
+
     model = YOLO(model_path)
     model.export(
         format="engine",

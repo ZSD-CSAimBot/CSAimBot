@@ -119,13 +119,19 @@ class AimBot:
             A tuple of offsets from screen center, or (None, None) when no valid target exists.
         """
         if boxes_data_tensor is None or boxes_data_tensor.shape[0] == 0:
+            print(f"<AIMBOT_TARGET> No boxes data", flush=True)
             return None, None
+
         cls = boxes_data_tensor[:, 5]
         valid_classes = torch.tensor(self.head_class_id + self.body_class_id, device=boxes_data_tensor.device)
         mask = torch.isin(cls, valid_classes)
         valid_boxes = boxes_data_tensor[mask]
 
+        print(f"<AIMBOT_TARGET> Total detections: {len(cls)}, Valid boxes (head/body): {len(valid_boxes)}", flush=True)
+        print(f"<AIMBOT_TARGET> head_class_id: {self.head_class_id}, body_class_id: {self.body_class_id}", flush=True)
+
         if valid_boxes.shape[0] == 0:
+            print(f"<AIMBOT_TARGET> No valid target classes found", flush=True)
             return None, None
 
         centers_x = (valid_boxes[:, 0] + valid_boxes[:, 2]) / 2.0
@@ -137,6 +143,8 @@ class AimBot:
 
         offset_x = int(round(offsets_x[best_idx].item()))
         offset_y = int(round(offsets_y[best_idx].item()))
+
+        print(f"<AIMBOT_TARGET> Best target offset: x={offset_x}, y={offset_y}", flush=True)
 
         return self.recoil_compensation(offset_x, offset_y)
 
@@ -187,9 +195,13 @@ class AimBot:
 
         if results[0].boxes is not None and len(results[0].boxes) > 0:
             result_tensor = results[0].boxes.data
+            num_detections = len(results[0].boxes)
+            print(f"<AIMBOT_FRAME> Detections found: {num_detections}", flush=True)
+
             self.recoil_control = self.update_recoil_state(result_tensor)
             result = self.calculate_best_target_position(result_tensor)
             self.best_target_position = result if result[0] is not None else ("-", "-")
+            print(f"<AIMBOT_FRAME> best_target_position calculated: {self.best_target_position}", flush=True)
 
             if self.show_debug_window:
                 cpu_numpy_data = result_tensor.cpu().numpy()
@@ -197,6 +209,7 @@ class AimBot:
         else:
             self.recoil_control = False
             self.best_target_position = ("-", "-")
+            print(f"<AIMBOT_FRAME> No detections", flush=True)
             if self.show_debug_window:
                 self.display_results(None)
 
@@ -250,8 +263,12 @@ def vision_worker(pipe_conn, model_path, target_fps):
 
             if is_running:
                 try:
+                    offset_x = aimbot.best_target_position[0]
+                    offset_y = aimbot.best_target_position[1]
+                    # DEBUG: Print data being sent
+                    print(f"<AIMBOT_SEND> best_target_position: x={offset_x}, y={offset_y}", flush=True)
                     pipe_conn.send(
-                        {"type": "offsets", "x": aimbot.best_target_position[0], "y": aimbot.best_target_position[1]})
+                        {"type": "offsets", "x": offset_x, "y": offset_y})
                 except Exception as e:
                     print(e)
                     pass
