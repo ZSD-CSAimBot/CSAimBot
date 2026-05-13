@@ -5,6 +5,8 @@ import cv2
 import torch
 import numpy as np
 from ultralytics import YOLO
+from screeninfo import get_monitors
+
 from detection_system.camera import CameraProvider
 
 
@@ -25,8 +27,10 @@ class AimBot:
 
     def prepare_camera(self):
         """Configure the capture region and camera provider."""
-        SCREEN_WIDTH = 1920
-        SCREEN_HEIGHT = 1080
+        monitor = next(m for m in get_monitors() if m.is_primary)
+
+        SCREEN_WIDTH = monitor.width
+        SCREEN_HEIGHT = monitor.height
         self.FOV_WIDTH = 1280
         self.FOV_HEIGHT = 736
 

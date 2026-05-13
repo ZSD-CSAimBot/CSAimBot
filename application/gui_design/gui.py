@@ -26,7 +26,7 @@ class GUI:
             comms_pipe: Pipe used to communicate with the serial worker.
             sim_pipe: Pipe used to communicate with the simulation worker.
         """
-        self.pipe = vision_pipe 
+        self.pipe = vision_pipe
         self.comms_pipe = comms_pipe
         self.sim_pipe = sim_pipe
         self.simulation_state = "stopped"
@@ -57,6 +57,10 @@ class GUI:
         self.pid_integral = 0.0
         self.pid_prev_error = 0.0
         self.pid_last_time = time.time()
+        self.current_scale = 1.0
+
+        # Dictionary for smart management of forced dimension responsiveness
+        self.layout_elements = {}
 
         self.active_page_tag = "page_home"
         self.nav_config = {
@@ -74,7 +78,8 @@ class GUI:
                 "nav_home": "Home Page", "nav_control": "Control Panel", "nav_stat": "Statistics",
                 "nav_settings": "Settings",
                 "start": "START", "cal": "CALIBRATE", "stop": "FORCE STOP",
-                "lang": "Language", "res": "Resolution", "port": "COM Port", "status_ok": "Status: OK","status_err": "Error: ",
+                "lang": "Language", "res": "Resolution", "port": "COM Port", "status_ok": "Status: OK",
+                "status_err": "Error: ",
                 "target": "Target Prioritization:", "logs": "System Logs:", "opencv": "Show OpenCV window",
                 "lmb": "Press LMB", "rmb": "Press RMB", "gripper": "Gripper Test", "set0": "Set 0",
                 "homing": "Homing", "centering": "Centering",
@@ -90,13 +95,15 @@ class GUI:
                 "stat_energy_title": "Energy wasted",
                 "stat_energy_desc": "Aproximated amount of energy used by the bot",
                 "stat_unknown_title": "???", "stat_unknown_desc": "???",
-                "stat_keys_title": "Keys pressed", "stat_keys_desc": "Amount of key presses by a user"
+                "stat_keys_title": "Keys pressed", "stat_keys_desc": "Amount of key presses by a user",
+                "refresh": "Refresh"
             },
             "Polski": {
                 "nav_home": "Strona Główna", "nav_control": "Panel Sterowania", "nav_stat": "Statystyki",
                 "nav_settings": "Ustawienia",
                 "start": "START", "cal": "KALIBRUJ", "stop": "WYMUŚ STOP",
-                "lang": "Język", "res": "Rozdzielczość", "port": "Port COM", "status_ok": "Status: OK", "status_err": "Błąd: ",
+                "lang": "Język", "res": "Rozdzielczość", "port": "Port COM", "status_ok": "Status: OK",
+                "status_err": "Błąd: ",
                 "target": "Priorytet Celu:", "logs": "Logi Systemowe:", "opencv": "Pokaż okno OpenCV",
                 "lmb": "Wciśnij LPM", "rmb": "Wciśnij PPM", "gripper": "Test Chwytaka", "set0": "Ustaw 0",
                 "homing": "Homing", "centering": "Centrowanie",
@@ -110,13 +117,17 @@ class GUI:
                 "stat_energy_desc": "Przybliżona ilość energii zużytej przez bota",
                 "stat_unknown_title": "???", "stat_unknown_desc": "???",
                 "stat_keys_title": "Wciśnięte klawisze",
-                "stat_keys_desc": "Ilość klawiszy wciśniętych przez użytkownika"
+                "stat_keys_desc": "Ilość klawiszy wciśniętych przez użytkownika",
+                "refresh": "Odśwież"
             }
         }
         dpg.create_context()
         self.width = 1280
         self.height = 720
-        dpg.create_viewport(title='CSAimBot Control Panel', width=self.width, height=self.height, resizable=False)
+
+        # FIX: Locking min and max window sizes naturally disables the Windows maximize button
+        dpg.create_viewport(title='CSAimBot Control Panel', width=self.width, height=self.height, resizable=False,
+                            min_width=self.width, max_width=self.width, min_height=self.height, max_height=self.height)
         dpg.setup_dearpygui()
 
         self.setup_fonts()
@@ -130,6 +141,58 @@ class GUI:
         self.sim_pipe.send({"cmd": "STATUS"})
         self.on_language_change(None, "English")
         self.update_simulation_display()
+
+        # Initialize and display available COM ports correctly
+        self.refresh_ports()
+
+    def rs(self, w=None, h=None, pos=None, wrap=None, tag=None):
+        """Register base UI constraints for high-quality scaling logic."""
+        if tag is None:
+            tag = dpg.generate_uuid()
+        self.layout_elements[tag] = {'w': w, 'h': h, 'pos': pos, 'wrap': wrap}
+        return tag
+
+    def on_resolution_change(self, sender, app_data):
+        """Smoothly switches resolution using dedicated fonts, preserving quality."""
+        try:
+            new_w, new_h = map(int, app_data.split('x'))
+            self.current_scale = new_w / 1280.0
+            self.width = new_w
+            self.height = new_h
+
+            # Configure viewport with hard bounds to keep maximize button disabled
+            dpg.configure_viewport(0, width=self.width, height=self.height,
+                                   min_width=self.width, max_width=self.width,
+                                   min_height=self.height, max_height=self.height)
+
+            # Switch to the appropriate font, avoiding ugly blur
+            if hasattr(self, 'font_720') and self.font_720 and hasattr(self, 'font_1080') and self.font_1080:
+                dpg.bind_font(self.font_1080 if self.current_scale > 1.1 else self.font_720)
+
+            # Update the base width of the sidebar before scaling, if expanded
+            base_w = 235 if self.sidebar_expanded else 60
+            if "window_sidebar" in self.layout_elements:
+                self.layout_elements["window_sidebar"]['w'] = base_w
+            if "sidebar_child" in self.layout_elements:
+                self.layout_elements["sidebar_child"]['w'] = base_w
+
+            # Apply native proportion changes to registered, fixed elements
+            for tag, base in self.layout_elements.items():
+                if dpg.does_item_exist(tag):
+                    kwargs = {}
+                    if base['w'] is not None: kwargs['width'] = int(base['w'] * self.current_scale)
+                    if base['h'] is not None: kwargs['height'] = int(base['h'] * self.current_scale)
+                    if base['pos'] is not None:
+                        kwargs['pos'] = [int(base['pos'][0] * self.current_scale),
+                                         int(base['pos'][1] * self.current_scale)]
+                    if base['wrap'] is not None:
+                        kwargs['wrap'] = int(base['wrap'] * self.current_scale)
+
+                    if kwargs:
+                        dpg.configure_item(tag, **kwargs)
+
+        except Exception as e:
+            print(f"Error during resolution change: {e}")
 
     def switch_page(self, sender, app_data, user_data):
         """Switch the visible page in the main window.
@@ -148,16 +211,28 @@ class GUI:
             self.toggle_sidebar(None, None)
 
     def setup_fonts(self):
-        """Load the UI font and apply supported Unicode ranges."""
+        """Loads two font sizes for perfect responsiveness and text quality."""
         current_dir = os.path.dirname(os.path.abspath(__file__))
         font_path = os.path.join(current_dir, "fonts", "Roboto.ttf")
 
+        self.font_720 = None
+        self.font_1080 = None
+
         with dpg.font_registry():
             if os.path.exists(font_path):
-                with dpg.font(font_path, 17) as self.default_font:
+                # Standard font for 720p
+                with dpg.font(font_path, 17) as f720:
                     dpg.add_font_range_hint(dpg.mvFontRangeHint_Default)
                     dpg.add_font_range(0x0100, 0x017F)
-                dpg.bind_font(self.default_font)
+                    self.font_720 = f720
+
+                # Large native font for 1080p, guaranteeing readability
+                with dpg.font(font_path, 26) as f1080:
+                    dpg.add_font_range_hint(dpg.mvFontRangeHint_Default)
+                    dpg.add_font_range(0x0100, 0x017F)
+                    self.font_1080 = f1080
+
+                dpg.bind_font(self.font_720)
 
     def create_rbtn_theme(self, bg_color, hover_color, dot_color, text_color):
         """Create a radio button theme.
@@ -342,11 +417,18 @@ class GUI:
             load_and_add("icons/stats/ikona_energy.png", "tex_stat_energy")
             load_and_add("icons/stats/ikona_keys.png", "tex_stat_keys")
 
-
     def toggle_sidebar(self, sender, app_data):
         """Expand or collapse the navigation sidebar."""
         self.sidebar_expanded = not self.sidebar_expanded
-        new_width = 235 if self.sidebar_expanded else 60
+        base_w = 235 if self.sidebar_expanded else 60
+
+        # Base updated within the responsive registry
+        if "window_sidebar" in self.layout_elements:
+            self.layout_elements["window_sidebar"]['w'] = base_w
+        if "sidebar_child" in self.layout_elements:
+            self.layout_elements["sidebar_child"]['w'] = base_w
+
+        new_width = int(base_w * getattr(self, 'current_scale', 1.0))
         dpg.configure_item("window_sidebar", width=new_width)
         dpg.configure_item("sidebar_child", width=new_width)
         dpg.configure_item("window_dim", show=self.sidebar_expanded)
@@ -378,18 +460,18 @@ class GUI:
         with dpg.group(horizontal=True):
             if dpg.does_alias_exist(icon_or_texture_tag):
                 btn = dpg.add_image_button(texture_tag=icon_or_texture_tag, width=50, height=50,
-                                           callback=self.switch_page, user_data=page_tag)
+                                           callback=self.switch_page, user_data=page_tag, tag=self.rs(w=50, h=50))
             else:
                 btn = dpg.add_button(label=icon_or_texture_tag, width=50, height=50, callback=self.switch_page,
-                                     user_data=page_tag)
+                                     user_data=page_tag, tag=self.rs(w=50, h=50))
 
             dpg.bind_item_theme(btn, self.transparent_btn_theme)
             with dpg.group():
-                dpg.add_spacer(height=15)
+                dpg.add_spacer(height=15, tag=self.rs(h=15))
                 txt = dpg.add_text(text_label, show=False)
                 dpg.bind_item_theme(txt, self.gold_text_theme)
             self.nav_texts.append(txt)
-        dpg.add_spacer(height=5)
+        dpg.add_spacer(height=5, tag=self.rs(h=5))
 
     def on_language_change(self, sender, app_data):
         """Apply the selected language to the visible labels.
@@ -491,40 +573,53 @@ class GUI:
             suffix: Page suffix used to build unique widget tags.
         """
         with dpg.group(horizontal=True):
-            dpg.add_spacer(width=14)
+            dpg.add_spacer(width=14, tag=self.rs(w=14))
             btn_start_sim = dpg.add_button(
                 label="START SIM",
                 width=105,
                 height=35,
-                tag=f"btn_start_sim_{suffix}",
+                tag=self.rs(105, 35, tag=f"btn_start_sim_{suffix}"),
                 callback=self.on_start_sim
             )
-            dpg.add_spacer(width=10)
+            dpg.add_spacer(width=10, tag=self.rs(w=10))
             btn_stop_sim = dpg.add_button(
                 label="STOP SIM",
                 width=105,
                 height=35,
-                tag=f"btn_stop_sim_{suffix}",
+                tag=self.rs(105, 35, tag=f"btn_stop_sim_{suffix}"),
                 callback=self.on_stop_sim
             )
 
         dpg.bind_item_theme(btn_start_sim, self.green_btn_theme)
         dpg.bind_item_theme(btn_stop_sim, self.red_btn_theme)
 
+    def refresh_ports(self, sender=None, app_data=None):
+        """Refresh the list of available COM ports and explicitly update the combo box value."""
+        available_ports = [port.device for port in serial.tools.list_ports.comports()]
+        if not available_ports:
+            available_ports = ["COM3"]
+
+        if dpg.does_item_exist("combo_port"):
+            dpg.configure_item("combo_port", items=available_ports)
+            # Explicitly setting value prevents Dear PyGui from displaying an empty box dynamically
+            dpg.set_value("combo_port", available_ports[0])
+            self.comms_pipe.send({"cmd": "CHANGE_PORT", "value": available_ports[0]})
+
     def build_ui(self):
         """Construct the full Dear PyGui interface."""
         dpg.bind_theme(self.global_theme)
-        with dpg.window(tag="window_root", width=self.width, height=self.height, no_title_bar=True, no_resize=True,
+        with dpg.window(tag=self.rs(self.width, self.height, tag="window_root"), width=self.width, height=self.height,
+                        no_title_bar=True, no_resize=True,
                         no_move=True):
             dpg.bind_item_theme("window_root", self.root_theme)
 
             with dpg.group(tag="page_home", show=True):
-                dpg.add_spacer(height=30)
+                dpg.add_spacer(height=30, tag=self.rs(h=30))
                 with dpg.group(horizontal=True):
-                    dpg.add_spacer(width=100)
+                    dpg.add_spacer(width=100, tag=self.rs(w=100))
                     with dpg.group():
                         with dpg.group(horizontal=True):
-                            with dpg.child_window(width=520, height=300):
+                            with dpg.child_window(width=520, height=300, tag=self.rs(520, 300)):
                                 with dpg.plot(label="Dane", width=-1, height=-1, tag="plot_home_1"):
                                     dpg.add_plot_axis(dpg.mvXAxis, tag="home_plot1_x")
                                     dpg.add_plot_axis(dpg.mvYAxis, tag="home_plot1_y")
@@ -535,9 +630,9 @@ class GUI:
                                     dpg.add_line_series(x_data_1, y_data_1, parent="home_plot1_y")
                                     dpg.add_scatter_series(x_data_1, y_data_1, parent="home_plot1_y")
 
-                            dpg.add_spacer(width=20)
+                            dpg.add_spacer(width=20, tag=self.rs(w=20))
 
-                            with dpg.child_window(width=520, height=300):
+                            with dpg.child_window(width=520, height=300, tag=self.rs(520, 300)):
                                 with dpg.plot(label="Dane", width=-1, height=-1, tag="plot_home_2"):
                                     dpg.add_plot_axis(dpg.mvXAxis, tag="home_plot2_x")
                                     dpg.add_plot_axis(dpg.mvYAxis, tag="home_plot2_y")
@@ -548,24 +643,28 @@ class GUI:
                                     dpg.add_line_series(x_data_2, y_data_2, parent="home_plot2_y")
                                     dpg.add_scatter_series(x_data_2, y_data_2, parent="home_plot2_y")
 
-                        dpg.add_spacer(height=40)
+                        dpg.add_spacer(height=40, tag=self.rs(h=40))
 
                         with dpg.group(horizontal=True):
-                            with dpg.group(width=200):
+                            # FIX: Added group width scaling to prevent overlapping with system logs
+                            with dpg.group(width=200, tag=self.rs(w=200)):
                                 btn_start_home = dpg.add_button(label="START", width=200, height=50,
-                                                                tag="btn_start_home", callback=self.on_start)
-                                dpg.add_spacer(height=10)
+                                                                tag=self.rs(200, 50, tag="btn_start_home"),
+                                                                callback=self.on_start)
+                                dpg.add_spacer(height=10, tag=self.rs(h=10))
                                 btn_calibrate_home = dpg.add_button(label="CALIBRATE", width=200, height=50,
-                                                                    tag="btn_cal_home", callback=self.on_calibrate)
-                                dpg.add_spacer(height=10)
+                                                                    tag=self.rs(200, 50, tag="btn_cal_home"),
+                                                                    callback=self.on_calibrate)
+                                dpg.add_spacer(height=10, tag=self.rs(h=10))
                                 btn_stop_home = dpg.add_button(label="FORCE STOP", width=200, height=50,
-                                                               tag="btn_stop_home", callback=self.on_stop)
+                                                               tag=self.rs(200, 50, tag="btn_stop_home"),
+                                                               callback=self.on_stop)
 
                                 dpg.bind_item_theme(btn_start_home, self.gray_btn_theme)
                                 dpg.bind_item_theme(btn_calibrate_home, self.gold_btn_theme)
                                 dpg.bind_item_theme(btn_stop_home, self.red_btn_theme)
 
-                                dpg.add_spacer(height=5)
+                                dpg.add_spacer(height=5, tag=self.rs(h=5))
 
                                 txt_target = dpg.add_text("Target Prioritization:", tag="txt_target_home")
                                 dpg.bind_item_theme(txt_target, self.gold_text_theme)
@@ -579,7 +678,7 @@ class GUI:
                                 )
                                 dpg.bind_item_theme(self.rbtn_target, self.violet_rbtn_theme)
 
-                                dpg.add_spacer(height=5)
+                                dpg.add_spacer(height=5, tag=self.rs(h=5))
                                 chk_debug = dpg.add_checkbox(
                                     label="Show OpenCV window",
                                     default_value=True,
@@ -587,80 +686,83 @@ class GUI:
                                     callback=self.on_debug_toggle
                                 )
 
-                            dpg.add_spacer(width=60)
+                            dpg.add_spacer(width=60, tag=self.rs(w=60))
 
-                            with dpg.child_window(width=470, height=220):
-                                dpg.add_spacer(height=10)
+                            with dpg.child_window(width=470, height=220, tag=self.rs(470, 220)):
+                                dpg.add_spacer(height=10, tag=self.rs(h=10))
                                 with dpg.group(horizontal=True):
-                                    dpg.add_spacer(width=10)
+                                    dpg.add_spacer(width=10, tag=self.rs(w=10))
                                     with dpg.group():
                                         dpg.add_text("System Logs:", color=[255, 183, 0])
                                         with dpg.group(tag="logs_group_home"):
                                             dpg.add_text("<System> Robot Control Active", color=[255, 255, 255])
                                         dpg.bind_item_theme("logs_group_home", self.white_text_theme)
-                                        dpg.add_spacer(height=20)
+                                        dpg.add_spacer(height=20, tag=self.rs(h=20))
                                         dpg.add_text("Wciśnięte klawisze:", color=[255, 183, 0])
                                         dpg.add_text("[ BRAK ]", tag="current_keys_text", color=[50, 200, 50])
 
-                            dpg.add_spacer(width=33)
+                            dpg.add_spacer(width=33, tag=self.rs(w=33))
 
                             with dpg.group():
-                                with dpg.child_window(width=280, height=165):
-                                    dpg.add_spacer(height=16)
+                                with dpg.child_window(width=280, height=165, tag=self.rs(280, 165)):
+                                    dpg.add_spacer(height=16, tag=self.rs(h=16))
                                     axes = ["X", "Y", "Z"]
                                     for axis in axes:
                                         with dpg.group(horizontal=True):
-                                            dpg.add_spacer(width=40)
+                                            dpg.add_spacer(width=40, tag=self.rs(w=40))
                                             axis_label = dpg.add_text(f"{axis}: ")
                                             dpg.bind_item_theme(axis_label, self.white_text_theme)
                                             axis_value = dpg.add_text("0.00", tag=f"coord_{axis.lower()}_home")
                                             dpg.bind_item_theme(axis_value, self.white_text_theme)
-                                        dpg.add_spacer(height=18)
+                                        dpg.add_spacer(height=18, tag=self.rs(h=18))
 
-                                dpg.add_spacer(height=10)
+                                dpg.add_spacer(height=10, tag=self.rs(h=10))
                                 self.add_sim_controls("home")
 
             with dpg.group(tag="page_control", show=False):
-                dpg.add_spacer(height=30)
+                dpg.add_spacer(height=30, tag=self.rs(h=30))
                 with dpg.group(horizontal=True):
-                    dpg.add_spacer(width=100)
+                    dpg.add_spacer(width=100, tag=self.rs(w=100))
                     with dpg.group():
                         with dpg.group(horizontal=True):
-                            with dpg.child_window(width=560, height=300):
+                            with dpg.child_window(width=560, height=300, tag=self.rs(560, 300)):
                                 with dpg.plot(label="Dane Wizyjne", width=-1, height=-1, tag="plot_control"):
                                     dpg.add_plot_axis(dpg.mvXAxis, tag="control_plot_x")
                                     dpg.add_plot_axis(dpg.mvYAxis, tag="control_plot_y")
                                     dpg.add_line_series(list(range(100)), [math.cos(x / 10) for x in range(100)],
                                                         parent="control_plot_y")
-                            dpg.add_spacer(width=20)
-                            with dpg.child_window(width=490, height=300):
-                                dpg.add_spacer(height=10)
+                            dpg.add_spacer(width=20, tag=self.rs(w=20))
+                            with dpg.child_window(width=480, height=300, tag=self.rs(480, 300)):
+                                dpg.add_spacer(height=10, tag=self.rs(h=10))
                                 with dpg.group(horizontal=True):
-                                    dpg.add_spacer(width=10)
+                                    dpg.add_spacer(width=10, tag=self.rs(w=10))
                                     with dpg.group():
                                         dpg.add_text("System Logs:", color=[255, 183, 0])
                                         with dpg.group(tag="logs_group_control"):
                                             self.add_log("<System> Robot Control Active", parent="logs_group_control")
                                         dpg.bind_item_theme("logs_group_control", self.white_text_theme)
 
-                        dpg.add_spacer(height=40)
+                        dpg.add_spacer(height=40, tag=self.rs(h=40))
 
                         with dpg.group(horizontal=True):
                             with dpg.group():
-                                btn_start = dpg.add_button(label="START", width=200, height=50, tag="btn_start_control",
+                                btn_start = dpg.add_button(label="START", width=200, height=50,
+                                                           tag=self.rs(200, 50, tag="btn_start_control"),
                                                            callback=self.on_start)
-                                dpg.add_spacer(height=10)
+                                dpg.add_spacer(height=10, tag=self.rs(h=10))
                                 btn_calibrate = dpg.add_button(label="CALIBRATE", width=200, height=50,
-                                                               tag="btn_cal_control", callback=self.on_calibrate)
-                                dpg.add_spacer(height=10)
+                                                               tag=self.rs(200, 50, tag="btn_cal_control"),
+                                                               callback=self.on_calibrate)
+                                dpg.add_spacer(height=10, tag=self.rs(h=10))
                                 btn_stop = dpg.add_button(label="FORCE STOP", width=200, height=50,
-                                                          tag="btn_stop_control", callback=self.on_stop)
+                                                          tag=self.rs(200, 50, tag="btn_stop_control"),
+                                                          callback=self.on_stop)
 
                                 dpg.bind_item_theme(btn_start, self.gray_btn_theme)
                                 dpg.bind_item_theme(btn_calibrate, self.gold_btn_theme)
                                 dpg.bind_item_theme(btn_stop, self.red_btn_theme)
 
-                                dpg.add_spacer(height=5)
+                                dpg.add_spacer(height=5, tag=self.rs(h=5))
 
                                 txt_target = dpg.add_text("Target Prioritization:")
                                 dpg.bind_item_theme(txt_target, self.gold_text_theme)
@@ -674,14 +776,14 @@ class GUI:
                                 )
                                 dpg.bind_item_theme(self.rbtn_target, self.violet_rbtn_theme)
 
-                                dpg.add_spacer(height=5)
+                                dpg.add_spacer(height=5, tag=self.rs(h=5))
                                 self.chk_debug = dpg.add_checkbox(
                                     label="Show OpenCV window",
                                     default_value=True,
                                     callback=self.on_debug_toggle
                                 )
 
-                            dpg.add_spacer(width=40)
+                            dpg.add_spacer(width=40, tag=self.rs(w=40))
 
                             with dpg.group():
                                 # ROW 1: LMB (Half) + Homing (Half) + Jog + Set 0
@@ -763,83 +865,96 @@ class GUI:
                                                                       callback=self.on_set_zero, user_data="test")
                                     dpg.bind_item_theme(btn_set0_gripper, self.gray_btn_theme)
 
-                                dpg.add_spacer(height=10)
+                                dpg.add_spacer(height=10, tag=self.rs(h=10))
 
                                 # SPEED SLIDER RESTORED
                                 with dpg.table(header_row=False, width=470, borders_innerH=False, borders_outerH=False,
-                                               borders_innerV=False, borders_outerV=False):
-                                    dpg.add_table_column(width_fixed=True, init_width_or_weight=90, width=90)
+                                               borders_innerV=False, borders_outerV=False, tag=self.rs(w=470)):
+                                    dpg.add_table_column(width_fixed=True, init_width_or_weight=90, width=90,
+                                                         tag=self.rs(w=90))
                                     dpg.add_table_column()
                                     with dpg.table_row():
                                         txt_speed = dpg.add_text("Speed: 75%", tag="speed_text_label_control")
                                         dpg.bind_item_theme(txt_speed, self.white_text_theme)
 
                                         slider_speed = dpg.add_slider_int(width=370, default_value=75, format="",
-                                                                          tag="slider_speed_control",
+                                                                          tag=self.rs(370, tag="slider_speed_control"),
                                                                           callback=self.on_speed_change_control)
                                         dpg.bind_item_theme(slider_speed, self.slider_theme)
 
-                            dpg.add_spacer(width=40)
+                            dpg.add_spacer(width=40, tag=self.rs(w=40))
 
                             with dpg.group():
-                                with dpg.child_window(width=280, height=165):
-                                    dpg.add_spacer(height=16)
-                                    axes    = ["X", "Y", "Z"]
+                                with dpg.child_window(width=280, height=165, tag=self.rs(280, 165)):
+                                    dpg.add_spacer(height=16, tag=self.rs(h=16))
+                                    axes = ["X", "Y", "Z"]
                                     for axis in axes:
                                         with dpg.group(horizontal=True):
-                                            dpg.add_spacer(width=40)
+                                            dpg.add_spacer(width=40, tag=self.rs(w=40))
                                             axis_label = dpg.add_text(f"{axis}: ")
                                             dpg.bind_item_theme(axis_label, self.white_text_theme)
                                             axis_value = dpg.add_text("0.00", tag=f"coord_{axis.lower()}_control")
                                             dpg.bind_item_theme(axis_value, self.white_text_theme)
-                                        dpg.add_spacer(height=18)
+                                        dpg.add_spacer(height=18, tag=self.rs(h=18))
 
-                                dpg.add_spacer(height=10)
+                                dpg.add_spacer(height=10, tag=self.rs(h=10))
                                 self.add_sim_controls("control")
 
             with dpg.group(tag="page_settings", show=False):
-                dpg.add_spacer(height=60)
+                dpg.add_spacer(height=60, tag=self.rs(h=60))
                 with dpg.group(horizontal=True):
-                    dpg.add_spacer(width=310)
+                    dpg.add_spacer(width=310, tag=self.rs(w=310))
 
                     with dpg.group():
-                        with dpg.child_window(width=600, height=50, no_scrollbar=True) as row_lang:
-                            txt_lang = dpg.add_text("Language", tag="txt_lang", pos=[20, 13])
+                        with dpg.child_window(width=600, height=50, no_scrollbar=True,
+                                              tag=self.rs(600, 50, tag="row_lang")) as row_lang:
+                            txt_lang = dpg.add_text("Language", tag=self.rs(pos=[20, 13], tag="txt_lang"), pos=[20, 13])
                             dpg.bind_item_theme(txt_lang, self.white_text_theme)
-                            combo_lang = dpg.add_combo(items=["English", "Polski"], default_value="English", width=180, pos=[400, 13], callback=self.on_language_change)
+                            combo_lang = dpg.add_combo(items=["English", "Polski"], default_value="English", width=180,
+                                                       pos=[400, 13], callback=self.on_language_change,
+                                                       tag=self.rs(w=180, pos=[400, 13]))
                             dpg.bind_item_theme(combo_lang, self.gold_combo_theme)
                         dpg.bind_item_theme(row_lang, self.settings_row_theme)
-                        dpg.add_spacer(height=10)
+                        dpg.add_spacer(height=10, tag=self.rs(h=10))
 
-                        with dpg.child_window(width=600, height=50, no_scrollbar=True) as row_res:
-                            txt_res = dpg.add_text("Resolution", tag="txt_res", pos=[20, 13])
+                        with dpg.child_window(width=600, height=50, no_scrollbar=True,
+                                              tag=self.rs(600, 50, tag="row_res")) as row_res:
+                            txt_res = dpg.add_text("Resolution", tag=self.rs(pos=[20, 13], tag="txt_res"), pos=[20, 13])
                             dpg.bind_item_theme(txt_res, self.white_text_theme)
-                            combo_res = dpg.add_combo(items=["1280x720", "1920x1080"], default_value="1280x720", width=180, pos=[400, 13])
+                            combo_res = dpg.add_combo(items=["1280x720", "1920x1080"], default_value="1280x720",
+                                                      width=180, pos=[400, 13], callback=self.on_resolution_change,
+                                                      tag=self.rs(w=180, pos=[400, 13]))
                             dpg.bind_item_theme(combo_res, self.gold_combo_theme)
                         dpg.bind_item_theme(row_res, self.settings_row_theme)
-                        dpg.add_spacer(height=10)
+                        dpg.add_spacer(height=10, tag=self.rs(h=10))
 
-                        with dpg.child_window(width=600, height=50, no_scrollbar=True) as row_port:
-                            txt_port = dpg.add_text("COM Port", tag="txt_port", pos=[20, 13])
+                        # FIX: Added an explicit tag, explicit value-setting function, and a refresh button for COM Ports
+                        with dpg.child_window(width=600, height=50, no_scrollbar=True,
+                                              tag=self.rs(600, 50, tag="row_port")) as row_port:
+                            txt_port = dpg.add_text("COM Port", tag=self.rs(pos=[20, 13], tag="txt_port"), pos=[20, 13])
                             dpg.bind_item_theme(txt_port, self.white_text_theme)
-                            available_ports = [port.device for port in serial.tools.list_ports.comports()]
-                            if not available_ports:
-                                available_ports = ["COM3"]
 
-                            combo_port = dpg.add_combo(items=available_ports, default_value=available_ports[0],
-                                                       width=180, pos=[400, 13], callback=self.on_port_change)
+                            combo_port = dpg.add_combo(items=[], width=150, pos=[350, 13], callback=self.on_port_change,
+                                                       tag=self.rs(w=150, pos=[350, 13], tag="combo_port"))
                             dpg.bind_item_theme(combo_port, self.gold_combo_theme)
-                        dpg.bind_item_theme(row_port, self.settings_row_theme)
-                        dpg.add_spacer(height=10)
 
-                        for _ in range(5):
-                            with dpg.child_window(width=600, height=50, no_scrollbar=True) as row_empty:
+                            btn_refresh = dpg.add_button(label="Refresh", width=75, pos=[505, 13],
+                                                         callback=self.refresh_ports,
+                                                         tag=self.rs(w=75, pos=[505, 13], tag="btn_refresh_ports"))
+                            dpg.bind_item_theme(btn_refresh, self.gray_btn_theme)
+
+                        dpg.bind_item_theme(row_port, self.settings_row_theme)
+                        dpg.add_spacer(height=10, tag=self.rs(h=10))
+
+                        for i in range(5):
+                            with dpg.child_window(width=600, height=50, no_scrollbar=True,
+                                                  tag=self.rs(600, 50)) as row_empty:
                                 pass
                             dpg.bind_item_theme(row_empty, self.settings_row_theme)
-                            dpg.add_spacer(height=10)
+                            dpg.add_spacer(height=10, tag=self.rs(h=10))
 
             with dpg.group(tag="page_stat", show=False):
-                dpg.add_spacer(height=35)
+                dpg.add_spacer(height=35, tag=self.rs(h=35))
 
                 card_data = [
                     ("lmb", "tex_stat_lmb"), ("rmb", "tex_stat_rmb"),
@@ -849,65 +964,69 @@ class GUI:
                 ]
 
                 with dpg.group(horizontal=True):
-                    dpg.add_spacer(width=90)
+                    dpg.add_spacer(width=90, tag=self.rs(w=90))
                     with dpg.group():
                         for row in range(2):
                             with dpg.group(horizontal=True):
                                 for col in range(4):
                                     idx = row * 4 + col
                                     c_id, c_tex = card_data[idx]
-                                    with dpg.child_window(width=255, height=295) as card_win:
-                                        dpg.add_spacer(height=5)
+                                    with dpg.child_window(width=255, height=295, tag=self.rs(255, 295)) as card_win:
+                                        dpg.add_spacer(height=5, tag=self.rs(h=5))
                                         if c_tex:
                                             with dpg.group(horizontal=True):
-                                                dpg.add_spacer(width=72)
-                                                dpg.add_image(c_tex, width=80, height=80)
+                                                dpg.add_spacer(width=72, tag=self.rs(w=72))
+                                                dpg.add_image(c_tex, width=80, height=80, tag=self.rs(80, 80))
                                         else:
-                                            dpg.add_spacer(height=80)
+                                            dpg.add_spacer(height=80, tag=self.rs(h=80))
 
-                                        dpg.add_spacer(height=15)
+                                        dpg.add_spacer(height=15, tag=self.rs(h=15))
 
                                         title_txt = dpg.add_text("", tag=f"stat_title_{c_id}")
                                         dpg.bind_item_theme(title_txt, self.white_text_theme)
 
-                                        dpg.add_spacer(height=2)
-                                        desc_txt = dpg.add_text("", tag=f"stat_desc_{c_id}", wrap=225)
+                                        dpg.add_spacer(height=2, tag=self.rs(h=2))
+                                        desc_txt = dpg.add_text("", tag=self.rs(wrap=225, tag=f"stat_desc_{c_id}"),
+                                                                wrap=225)
                                         dpg.bind_item_theme(desc_txt, self.gold_text_theme)
 
-                                        dpg.add_spacer(height=20)
+                                        dpg.add_spacer(height=20, tag=self.rs(h=20))
 
                                         val_btn = dpg.add_button(
                                             label=StatsManager.format_value(c_id, self.stats_manager.get(c_id)),
                                             width=225, height=45,
-                                            tag=f"stat_val_{c_id}")
+                                            tag=self.rs(225, 45, tag=f"stat_val_{c_id}"))
                                         dpg.bind_item_theme(val_btn, self.stat_value_theme)
 
                                     dpg.bind_item_theme(card_win, self.stat_card_theme)
                                     if col < 3:
-                                        dpg.add_spacer(width=20)
+                                        dpg.add_spacer(width=20, tag=self.rs(w=20))
                             if row == 0:
-                                dpg.add_spacer(height=20)
-        with dpg.window(tag="window_dim", width=self.width, height=self.height, pos=(0, 0), no_title_bar=True,
+                                dpg.add_spacer(height=20, tag=self.rs(h=20))
+        with dpg.window(tag=self.rs(self.width, self.height, tag="window_dim"), width=self.width, height=self.height,
+                        pos=(0, 0), no_title_bar=True,
                         no_resize=True, no_move=True, show=False):
             dpg.bind_item_theme("window_dim", self.dim_theme)
-            dpg.add_button(width=self.width, height=self.height, callback=self.toggle_sidebar)
+            dpg.add_button(width=self.width, height=self.height, callback=self.toggle_sidebar, tag=self.rs(1280, 720))
             dpg.bind_item_theme(dpg.last_item(), self.invisible_btn_theme)
 
-        with dpg.window(tag="window_sidebar", width=60, height=self.height, pos=(0, 0), no_title_bar=True,
+        with dpg.window(tag=self.rs(60, self.height, tag="window_sidebar"), width=60, height=self.height, pos=(0, 0),
+                        no_title_bar=True,
                         no_resize=True, no_move=True):
             dpg.bind_item_theme("window_sidebar", self.sidebar_theme)
-            with dpg.child_window(tag="sidebar_child", width=60, height=self.height, border=False, no_scrollbar=True):
+            with dpg.child_window(tag=self.rs(60, self.height, tag="sidebar_child"), width=60, height=self.height,
+                                  border=False, no_scrollbar=True):
                 self.nav_texts = []
                 with dpg.group(horizontal=True):
                     self.btn_toggle = dpg.add_image_button(texture_tag="tex_menu", width=50, height=50,
-                                                           callback=self.toggle_sidebar)
+                                                           callback=self.toggle_sidebar, tag=self.rs(50, 50))
                     dpg.bind_item_theme(self.btn_toggle, self.transparent_btn_theme)
                     with dpg.group():
-                        dpg.add_spacer(height=15)
+                        dpg.add_spacer(height=15, tag=self.rs(h=15))
                         self.title_text = dpg.add_text("CSAimBot 1.0", show=False)
                         dpg.bind_item_theme(self.title_text, self.white_text_theme)
 
-                dpg.add_spacer(height=20)
+                dpg.add_spacer(height=20, tag=self.rs(h=20))
                 self.nav_texts = []
                 for page_tag, item_config in self.nav_config.items():
                     btn_tag = f"nav_btn_{page_tag}"
@@ -916,11 +1035,12 @@ class GUI:
 
                     with dpg.group(horizontal=True):
                         btn = dpg.add_image_button(texture_tag=item_config["inactive_tex"], width=50, height=50,
-                                                   callback=self.switch_page, user_data=page_tag, tag=btn_tag)
+                                                   callback=self.switch_page, user_data=page_tag,
+                                                   tag=self.rs(50, 50, tag=btn_tag))
                         dpg.bind_item_theme(btn, self.transparent_btn_theme)
 
                         with dpg.group():
-                            dpg.add_spacer(height=15)
+                            dpg.add_spacer(height=15, tag=self.rs(h=15))
                             txt = dpg.add_text(item_config["label"], show=False, tag=text_tag)
                             dpg.bind_item_theme(txt, self.gray_text_theme)
 
@@ -929,40 +1049,37 @@ class GUI:
                             dpg.bind_item_handler_registry(txt, text_click_handler)
 
                         self.nav_texts.append(txt)
-                    dpg.add_spacer(height=5)
+                    dpg.add_spacer(height=5, tag=self.rs(h=5))
 
-                dpg.add_spacer(height=210)
+                dpg.add_spacer(height=210, tag=self.rs(h=210))
 
                 with dpg.group(tag="group_conn_text_placeholder", show=True):
-                    dpg.add_spacer(height=32)
+                    dpg.add_spacer(height=32, tag=self.rs(h=32))
 
                 with dpg.group(tag="group_conn_text", show=False):
                     with dpg.group(horizontal=True):
-                        dpg.add_spacer(width=10)
+                        dpg.add_spacer(width=10, tag=self.rs(w=10))
                         color = [80, 255, 80] if self.is_connected else [255, 80, 80]
                         text_val = "Status: OK" if self.is_connected else f"Error: {self.connection_msg}"
                         self.conn_text = dpg.add_text(text_val, color=color)
-                    dpg.add_spacer(height=5)
+                    dpg.add_spacer(height=5, tag=self.rs(h=5))
 
                 tex_icon = "tex_conn_green" if self.is_connected else "tex_conn_red"
                 tex_full = "tex_conn_green_full" if self.is_connected else "tex_conn_red_full"
 
                 with dpg.group(horizontal=True, tag="group_conn_icon", show=True):
                     self.btn_connect_icon = dpg.add_image_button(texture_tag=tex_icon, width=50, height=50, indent=2,
-                                                           callback=self.on_connect_click)  # Compact connection toggle
+                                                                 callback=self.on_connect_click, tag=self.rs(50, 50))
                     dpg.bind_item_theme(self.btn_connect_icon, self.transparent_btn_theme)
 
                 with dpg.group(horizontal=True, tag="group_conn_full", show=False):
                     self.btn_connect_full = dpg.add_image_button(texture_tag=tex_full, width=220, height=50, indent=2,
-                                                           callback=self.on_connect_click)  # Full-width connection toggle
+                                                                 callback=self.on_connect_click, tag=self.rs(220, 50))
                     dpg.bind_item_theme(self.btn_connect_full, self.transparent_btn_theme)
 
-    def on_speed_change_control(self, sender, app_data, user_data=None):
+    def on_speed_change_control(self, app_data):
         """Update the active speed setting."""
-        # Bezpieczne pobranie wartości bezpośrednio z elementu interfejsu
-        current_val = dpg.get_value(sender)
-        self.current_speed = int(current_val)
-
+        self.current_speed = int(app_data)
         t = self.lang_dict[self.current_lang]
         dpg.set_value("speed_text_label_control", f"{t['speed']}: {self.current_speed}%")
 
@@ -1045,7 +1162,8 @@ class GUI:
             self.connection_state = "disconnecting"
             self.update_connection_display()
             self.comms_pipe.send({"cmd": "DISCONNECT"})
-
+            
+            
     def on_step_adjust(self, sender, app_data, user_data):
         """Adjust the simulated step position for a control action.
 
@@ -1069,7 +1187,7 @@ class GUI:
         self._update_coords_display()
 
         if self.is_connected:
-            self.comms_pipe.send({"cmd": "SEND", "value": f"0,0,{self.current_speed},{simulated_key}"})
+            self.comms_pipe.send({"cmd": "SEND", "value": f"{self.pos_x},{self.pos_y},{self.current_speed},{simulated_key}"})
 
     def on_set_zero(self, sender, app_data, user_data):
         """Reset the selected control axis to zero.
