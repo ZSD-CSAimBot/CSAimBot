@@ -47,7 +47,7 @@ bool isCommandReady = false;
 
 int delayCoreXY = 800;
 const int delayZ = 300;
-int homingDelay = 1500;
+int homingDelay = 500;
 
 bool motor1Running = false;
 bool motor2Running = false;
@@ -67,6 +67,9 @@ float currentPosY = 0.0;
 unsigned long lastEncoderPrint = 0;
 
 float stepsPerCM = 296.30;
+
+bool isZUp = false;
+long stepsForZDrop = 4000;
 
 // ============================================================================
 // ENCODER AXIS SIGN CALIBRATION
@@ -155,6 +158,60 @@ void moveZ(int dirZ) {
   delayMicroseconds(5);
 
   motorZRunning = true;
+}
+
+// ============================================================================
+// Z-AXIS CONTROL FUNCTIONS
+// ============================================================================
+
+void zLift() {
+  Serial.println("Lifting Z axis to endstop...");
+
+  // Set direction to move UP
+  digitalWrite(DIRZ_PIN, HIGH);
+
+  // Move UP until the limit switch is triggered (assuming LOW means pressed)
+  while (digitalRead(LIMIT_Z_PIN) == HIGH) {
+    digitalWrite(PULZ_PIN, HIGH);
+    delayMicroseconds(delayZ);
+    digitalWrite(PULZ_PIN, LOW);
+    delayMicroseconds(delayZ);
+  }
+
+  // Back off slightly to release the physical switch
+  digitalWrite(DIRZ_PIN, LOW);
+  for (int i = 0; i < 200; i++) {
+    digitalWrite(PULZ_PIN, HIGH);
+    delayMicroseconds(delayZ);
+    digitalWrite(PULZ_PIN, LOW);
+    delayMicroseconds(delayZ);
+  }
+
+  isZUp = true;
+  Serial.println("Z axis is UP and homed.");
+}
+
+void zDrop() {
+  if (!isZUp) {
+    Serial.println("Z axis is already DOWN or unknown state. Homing first...");
+    zLift();
+  }
+
+  Serial.println("Dropping Z axis...");
+
+  // Set direction to move DOWN
+  digitalWrite(DIRZ_PIN, LOW);
+
+  // Move down by exactly the defined number of steps
+  for (long i = 0; i < stepsForZDrop; i++) {
+    digitalWrite(PULZ_PIN, HIGH);
+    delayMicroseconds(delayZ);
+    digitalWrite(PULZ_PIN, LOW);
+    delayMicroseconds(delayZ);
+  }
+
+  isZUp = false;
+  Serial.println("Z axis is DOWN.");
 }
 
 // ============================================================================
@@ -253,6 +310,73 @@ void blockMoveIfWouldExceedLimit(bool &moveUp, bool &moveDown, bool &moveLeft, b
   }
 }
 // ============================================================================
+// CENTERING FUNCTION
+// ============================================================================
+
+// ============================================================================
+// CENTERING FUNCTION
+// ============================================================================
+
+void moveToCenter(int speedDelay) {
+  Serial.println("Moving to workspace center...");
+
+  float targetX = LIMIT_MAX_X / 2.0;
+  float targetY = LIMIT_MAX_Y / 2.0;
+
+  while (true) {
+    updateEncoderPosition();
+
+    bool moveU = false;
+    bool moveD = false;
+    bool moveL = false;
+    bool moveR = false;
+
+    // Origin is Top-Right (0,0)
+    if (currentPosX < targetX - 0.15) moveL = true;
+    else if (currentPosX > targetX + 0.15) moveR = true;
+
+    if (currentPosY < targetY - 0.15) moveD = true;
+    else if (currentPosY > targetY + 0.15) moveU = true;
+
+    // Break the loop if we are within the deadzone
+    if (!moveU && !moveD && !moveL && !moveR) {
+      break;
+    }
+
+    // Apply CoreXY matrix
+    if (moveU && moveR) {
+      setMotorsXY(true, HIGH, false, LOW);
+    } else if (moveU && moveL) {
+      setMotorsXY(false, LOW, true, LOW);
+    } else if (moveD && moveR) {
+      setMotorsXY(false, LOW, true, HIGH);
+    } else if (moveD && moveL) {
+      setMotorsXY(true, LOW, false, LOW);
+    } else if (moveU) {
+      setMotorsXY(true, HIGH, true, LOW);
+    } else if (moveD) {
+      setMotorsXY(true, LOW, true, HIGH);
+    } else if (moveR) {
+      setMotorsXY(true, HIGH, true, HIGH);
+    } else if (moveL) {
+      setMotorsXY(true, LOW, true, LOW);
+    }
+
+    // Step generation with dynamic speed
+    if (motor1Running) digitalWrite(PUL1_PIN, HIGH);
+    if (motor2Running) digitalWrite(PUL2_PIN, HIGH);
+    delayMicroseconds(speedDelay);
+
+    if (motor1Running) digitalWrite(PUL1_PIN, LOW);
+    if (motor2Running) digitalWrite(PUL2_PIN, LOW);
+    delayMicroseconds(speedDelay);
+  }
+
+  stopAllMotors();
+  Serial.println("Center reached.");
+}
+
+// ============================================================================
 // HOMING SEQUENCE
 // ============================================================================
 
@@ -264,10 +388,10 @@ void performHoming() {
   int debounceLimitMs = 30;
 
   // ==========================================================================
-  // 1. X-AXIS HOMING
+  // 1. Y-AXIS HOMING
   // ==========================================================================
 
-  Serial.println("Homing X...");
+  Serial.println("Homing Y...");
 
   digitalWrite(DIR1_PIN, HIGH);
   digitalWrite(DIR2_PIN, LOW);
@@ -282,9 +406,9 @@ void performHoming() {
     delayMicroseconds(homingDelay);
   }
 
-  Serial.println("X limit hit. Backing off...");
+  Serial.println("Y limit hit. Backing off...");
 
-  // Back-off X by around 1 cm
+  // Back-off Y by around 1 cm
   digitalWrite(DIR1_PIN, LOW);
   digitalWrite(DIR2_PIN, HIGH);
 
@@ -301,10 +425,10 @@ void performHoming() {
   delay(200);
 
   // ==========================================================================
-  // 2. Y-AXIS HOMING
+  // 2. X-AXIS HOMING
   // ==========================================================================
 
-  Serial.println("Homing Y...");
+  Serial.println("Homing X...");
 
   digitalWrite(DIR1_PIN, HIGH);
   digitalWrite(DIR2_PIN, HIGH);
@@ -319,9 +443,9 @@ void performHoming() {
     delayMicroseconds(homingDelay);
   }
 
-  Serial.println("Y limit hit. Backing off...");
+  Serial.println("X limit hit. Backing off...");
 
-  // Back-off Y by around 1 cm
+  // Back-off X by around 1 cm
   digitalWrite(DIR1_PIN, LOW);
   digitalWrite(DIR2_PIN, LOW);
 
@@ -353,6 +477,12 @@ void performHoming() {
   stopAllMotors();
 
   Serial.println("Homing OK! Position set to 0,0.");
+
+  // Wait half a second for stability, then move to the center
+  delay(500);
+  Serial.println("Centering.");
+  moveToCenter(500);
+
 }
 
 // ============================================================================
@@ -560,6 +690,9 @@ void loop() {
         else if (pressedKeys.indexOf('h') >= 0) {
           performHoming();
         }
+        else if (pressedKeys.indexOf('c') >= 0) {
+          moveToCenter(350);
+        }
 
         else {
           // Swapped physical keyboard mapping to match physical CoreXY axes
@@ -659,11 +792,11 @@ void loop() {
           // ==================================================================
 
           if (pressedKeys.indexOf('z') >= 0) {
-            moveZ(HIGH);
+            moveZ(HIGH); //DOWN
           }
 
           else if (pressedKeys.indexOf('x') >= 0) {
-            moveZ(LOW);
+            moveZ(LOW); //UP
           }
 
           else {
@@ -709,6 +842,16 @@ void loop() {
   }
 
   int currentDelay = (motorZRunning) ? delayZ : delayCoreXY;
+
+  if (!motorZRunning && (motor1Running != motor2Running)) {
+    // 0.707 ~ 1/sqrt(2)
+    currentDelay = (int)(currentDelay * 0.707);
+  }
+  const int MIN_SAFE_DELAY = 120;
+
+  if (currentDelay < MIN_SAFE_DELAY) {
+    currentDelay = MIN_SAFE_DELAY;
+  }
 
   if (motor1Running) digitalWrite(PUL1_PIN, HIGH);
   if (motor2Running) digitalWrite(PUL2_PIN, HIGH);

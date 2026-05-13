@@ -77,6 +77,7 @@ class GUI:
                 "lang": "Language", "res": "Resolution", "port": "COM Port", "status_ok": "Status: OK","status_err": "Error: ",
                 "target": "Target Prioritization:", "logs": "System Logs:", "opencv": "Show OpenCV window",
                 "lmb": "Press LMB", "rmb": "Press RMB", "gripper": "Gripper Test", "set0": "Set 0",
+                "homing": "Homing", "centering": "Centering",
                 "plot_data": "Data", "plot_vision": "Vision Data", "speed": "Speed",
                 "stat_lmb_title": "LMB Clicked",
                 "stat_lmb_desc": "How many times has the bot clicked left mouse button",
@@ -98,6 +99,7 @@ class GUI:
                 "lang": "Język", "res": "Rozdzielczość", "port": "Port COM", "status_ok": "Status: OK", "status_err": "Błąd: ",
                 "target": "Priorytet Celu:", "logs": "Logi Systemowe:", "opencv": "Pokaż okno OpenCV",
                 "lmb": "Wciśnij LPM", "rmb": "Wciśnij PPM", "gripper": "Test Chwytaka", "set0": "Ustaw 0",
+                "homing": "Homing", "centering": "Centrowanie",
                 "plot_data": "Dane", "plot_vision": "Dane Wizyjne", "speed": "Prędkość",
                 "stat_lmb_title": "Kliknięcia LPM", "stat_lmb_desc": "Ile razy bot kliknął lewy przycisk myszy",
                 "stat_rmb_title": "Kliknięcia PPM", "stat_rmb_desc": "Ile razy bot kliknął prawy przycisk myszy",
@@ -419,6 +421,7 @@ class GUI:
             ("btn_cal_home", "cal"), ("btn_cal_control", "cal"),
             ("btn_stop_home", "stop"), ("btn_stop_control", "stop"),
             ("btn_lmb_control", "lmb"), ("btn_rmb_control", "rmb"), ("btn_gripper_control", "gripper"),
+            ("btn_homing_control", "homing"), ("btn_centering_control", "centering"),
             ("btn_set0_lmb", "set0"), ("btn_set0_rmb", "set0"), ("btn_set0_gripper", "set0")
         ]
         for tag, dict_key in button_tags:
@@ -567,14 +570,14 @@ class GUI:
                                 txt_target = dpg.add_text("Target Prioritization:", tag="txt_target_home")
                                 dpg.bind_item_theme(txt_target, self.gold_text_theme)
 
-                                rbtn_target = dpg.add_radio_button(
+                                self.rbtn_target = dpg.add_radio_button(
                                     items=["ALL", "TT", "CT"],
                                     default_value="ALL",
                                     horizontal=True,
                                     tag="rbtn_target_home",
                                     callback=self.on_target_change
                                 )
-                                dpg.bind_item_theme(rbtn_target, self.violet_rbtn_theme)
+                                dpg.bind_item_theme(self.rbtn_target, self.violet_rbtn_theme)
 
                                 dpg.add_spacer(height=5)
                                 chk_debug = dpg.add_checkbox(
@@ -630,7 +633,7 @@ class GUI:
                                     dpg.add_line_series(list(range(100)), [math.cos(x / 10) for x in range(100)],
                                                         parent="control_plot_y")
                             dpg.add_spacer(width=20)
-                            with dpg.child_window(width=480, height=300):
+                            with dpg.child_window(width=490, height=300):
                                 dpg.add_spacer(height=10)
                                 with dpg.group(horizontal=True):
                                     dpg.add_spacer(width=10)
@@ -666,6 +669,7 @@ class GUI:
                                     items=["ALL", "TT", "CT"],
                                     default_value="ALL",
                                     horizontal=True,
+                                    #tag="rbtn_target_control", #o cos sie psuje gowno
                                     callback=self.on_target_change
                                 )
                                 dpg.bind_item_theme(self.rbtn_target, self.violet_rbtn_theme)
@@ -680,48 +684,99 @@ class GUI:
                             dpg.add_spacer(width=40)
 
                             with dpg.group():
-                                actions = [("Press LMB", "lmb"), ("Press RMB", "rmb"), ("Gripper Test", "gripper")]
-                                for action_label, action_key in actions:
-                                    with dpg.group(horizontal=True):
-                                        btn_action = dpg.add_button(label=action_label, width=200, height=45,
-                                                                    tag=f"btn_{action_key}_control")
-                                        dpg.bind_item_theme(btn_action, self.gold_btn_theme)
+                                # ROW 1: LMB (Half) + Homing (Half) + Jog + Set 0
+                                with dpg.group(horizontal=True):
+                                    btn_lmb = dpg.add_button(label="Press LMB", width=95, height=45, tag="btn_lpm_control")
+                                    dpg.add_spacer(width=10)
+                                    btn_homing = dpg.add_button(label="Homing", width=95, height=45, tag="btn_homing_control")
+                                    dpg.bind_item_theme(btn_lmb, self.gold_btn_theme)
+                                    dpg.bind_item_theme(btn_homing, self.gold_btn_theme)
 
-                                        dpg.add_spacer(width=5)
+                                    dpg.add_spacer(width=5)
+                                    btn_left_lmb = dpg.add_button(label="<", width=70, height=45,
+                                                                  callback=self.on_step_adjust, user_data=("lpm", -1),
+                                                                  tag="btn_left_lpm")
+                                    dpg.bind_item_theme(btn_left_lmb, self.gold_btn_theme)
 
-                                        btn_left = dpg.add_button(label="<", width=70, height=45,
-                                                                  callback=self.on_step_adjust,
-                                                                  user_data=(action_key, -1),
-                                                                  tag=f"btn_left_{action_key}")
+                                    dpg.add_spacer(width=5)
+                                    btn_right_lmb = dpg.add_button(label=">", width=70, height=45,
+                                                                   callback=self.on_step_adjust, user_data=("lpm", 1),
+                                                                   tag="btn_right_lpm")
+                                    dpg.bind_item_theme(btn_right_lmb, self.gold_btn_theme)
 
-                                        dpg.bind_item_theme(btn_left, self.gold_btn_theme)
-
-                                        dpg.add_spacer(width=5)
-                                        btn_right = dpg.add_button(label=">", width=70, height=45,
-                                                                   callback=self.on_step_adjust,
-                                                                   user_data=(action_key, 1),
-                                                                   tag=f"btn_right_{action_key}")
-                                        dpg.bind_item_theme(btn_right, self.gold_btn_theme)
-
-                                        dpg.add_spacer(width=5)
-                                        btn_set_zero = dpg.add_button(label="Set 0", width=80, height=45,
-                                                                      tag=f"btn_set0_{action_key}",
-                                                                      callback=self.on_set_zero, user_data=action_key)
-                                        dpg.bind_item_theme(btn_set_zero, self.gray_btn_theme)
-
-                                    dpg.add_spacer(height=10)
+                                    dpg.add_spacer(width=5)
+                                    btn_set0_lmb = dpg.add_button(label="Set 0", width=80, height=45,
+                                                                  tag="btn_set0_lpm",
+                                                                  callback=self.on_set_zero, user_data="lpm")
+                                    dpg.bind_item_theme(btn_set0_lmb, self.gray_btn_theme)
 
                                 dpg.add_spacer(height=10)
 
+                                # ROW 2: RMB (Half) + Centering (Half) + Jog + Set 0
+                                with dpg.group(horizontal=True):
+                                    btn_rmb = dpg.add_button(label="Press RMB", width=95, height=45, tag="btn_ppm_control")
+                                    dpg.add_spacer(width=10)
+                                    btn_centering = dpg.add_button(label="Centering", width=95, height=45, tag="btn_centering_control")
+                                    dpg.bind_item_theme(btn_rmb, self.gold_btn_theme)
+                                    dpg.bind_item_theme(btn_centering, self.gold_btn_theme)
+
+                                    dpg.add_spacer(width=5)
+                                    btn_left_rmb = dpg.add_button(label="<", width=70, height=45,
+                                                                  callback=self.on_step_adjust, user_data=("ppm", -1),
+                                                                  tag="btn_left_ppm")
+                                    dpg.bind_item_theme(btn_left_rmb, self.gold_btn_theme)
+
+                                    dpg.add_spacer(width=5)
+                                    btn_right_rmb = dpg.add_button(label=">", width=70, height=45,
+                                                                   callback=self.on_step_adjust, user_data=("ppm", 1),
+                                                                   tag="btn_right_ppm")
+                                    dpg.bind_item_theme(btn_right_rmb, self.gold_btn_theme)
+
+                                    dpg.add_spacer(width=5)
+                                    btn_set0_rmb = dpg.add_button(label="Set 0", width=80, height=45,
+                                                                  tag="btn_set0_ppm",
+                                                                  callback=self.on_set_zero, user_data="ppm")
+                                    dpg.bind_item_theme(btn_set0_rmb, self.gray_btn_theme)
+
+                                dpg.add_spacer(height=10)
+
+                                # ROW 3: Gripper (Full width to match) + Jog + Set 0
+                                with dpg.group(horizontal=True):
+                                    btn_gripper = dpg.add_button(label="Gripper Test", width=215, height=45, tag="btn_test_control")
+                                    dpg.bind_item_theme(btn_gripper, self.gold_btn_theme)
+
+                                    dpg.add_spacer(width=5)
+                                    btn_left_gripper = dpg.add_button(label="<", width=70, height=45,
+                                                                      callback=self.on_step_adjust, user_data=("test", -1),
+                                                                      tag="btn_left_test")
+                                    dpg.bind_item_theme(btn_left_gripper, self.gold_btn_theme)
+
+                                    dpg.add_spacer(width=5)
+                                    btn_right_gripper = dpg.add_button(label=">", width=70, height=45,
+                                                                       callback=self.on_step_adjust, user_data=("test", 1),
+                                                                       tag="btn_right_test")
+                                    dpg.bind_item_theme(btn_right_gripper, self.gold_btn_theme)
+
+                                    dpg.add_spacer(width=5)
+                                    btn_set0_gripper = dpg.add_button(label="Set 0", width=80, height=45,
+                                                                      tag="btn_set0_test",
+                                                                      callback=self.on_set_zero, user_data="test")
+                                    dpg.bind_item_theme(btn_set0_gripper, self.gray_btn_theme)
+
+                                dpg.add_spacer(height=10)
+
+                                # SPEED SLIDER RESTORED
                                 with dpg.table(header_row=False, width=470, borders_innerH=False, borders_outerH=False,
                                                borders_innerV=False, borders_outerV=False):
-                                    dpg.add_table_column(width_fixed=True, init_width_or_weight=90)
+                                    dpg.add_table_column(width_fixed=True, init_width_or_weight=90, width=90)
                                     dpg.add_table_column()
                                     with dpg.table_row():
                                         txt_speed = dpg.add_text("Speed: 75%", tag="speed_text_label_control")
                                         dpg.bind_item_theme(txt_speed, self.white_text_theme)
 
-                                        slider_speed = dpg.add_slider_int(width=370, default_value=75, format="", tag="slider_speed_control", callback=self.on_speed_change_control)
+                                        slider_speed = dpg.add_slider_int(width=370, default_value=75, format="",
+                                                                          tag="slider_speed_control",
+                                                                          callback=self.on_speed_change_control)
                                         dpg.bind_item_theme(slider_speed, self.slider_theme)
 
                             dpg.add_spacer(width=40)
@@ -917,10 +972,13 @@ class GUI:
         Args:
             app_data: Selected target mode.
         """
-        for tag in ["rbtn_target_home", "rbtn_target_control"]:
+        target_tags = ["rbtn_target_home", "rbtn_target_control"]
+        for tag in target_tags:
             if dpg.does_item_exist(tag):
+                # Force the new value onto the widget
                 dpg.set_value(tag, app_data)
 
+                # Dynamically update the theme based on current selection
                 if app_data == "TT":
                     dpg.bind_item_theme(tag, self.yellow_rbtn_theme)
                 elif app_data == "CT":
@@ -928,6 +986,7 @@ class GUI:
                 else:
                     dpg.bind_item_theme(tag, self.violet_rbtn_theme)
 
+        # Send the updated target mode to the vision worker process
         self.pipe.send({"cmd": "SET_TARGET", "value": app_data})
 
     def on_debug_toggle(self, sender, app_data):
@@ -1031,13 +1090,17 @@ class GUI:
             self.comms_pipe.send({"cmd": "SEND", "value": f"0,0,{self.current_speed},"})
 
     def _update_coords_display(self):
-        """Refresh all coordinate readouts in the UI."""
+        """Refresh all coordinate readouts in the UI with 2-decimal formatting."""
+        formatted_x = f"{self.pos_x:.2f}"
+        formatted_y = f"{self.pos_y:.2f}"
+        formatted_z = f"{self.pos_z:.2f}"
+
         for tag_x in ["coord_x_control", "coord_x_home"]:
-            if dpg.does_item_exist(tag_x): dpg.set_value(tag_x, str(self.pos_x))
+            if dpg.does_item_exist(tag_x): dpg.set_value(tag_x, formatted_x)
         for tag_y in ["coord_y_control", "coord_y_home"]:
-            if dpg.does_item_exist(tag_y): dpg.set_value(tag_y, str(self.pos_y))
+            if dpg.does_item_exist(tag_y): dpg.set_value(tag_y, formatted_y)
         for tag_z in ["coord_z_control", "coord_z_home"]:
-            if dpg.does_item_exist(tag_z): dpg.set_value(tag_z, str(self.pos_z))
+            if dpg.does_item_exist(tag_z): dpg.set_value(tag_z, formatted_z)
 
     def on_start(self):
         """Start the vision worker."""
@@ -1120,14 +1183,6 @@ class GUI:
                         self.target_offset_x = 0
                         self.target_offset_y = 0
 
-                for axis, val in [("x", self.target_offset_x), ("y", self.target_offset_y)]:
-                    tag_control = f"coord_{axis}_control"
-                    tag_home = f"coord_{axis}_home"
-                    if dpg.does_item_exist(tag_control):
-                        dpg.set_value(tag_control, str(val))
-                    if dpg.does_item_exist(tag_home):
-                        dpg.set_value(tag_home, str(val))
-
                 now = time.time()
                 if self.is_connected and not self.manual_keys:
                     if force_update or (now - last_vision_send > 0.05):
@@ -1194,6 +1249,25 @@ class GUI:
                 elif msg.get("type") == "esp_msg":
                     esp_text = msg.get("value")
                     print(f"<ESP32> {esp_text}", flush=True)
+                    # PARSING LOGIC: Extract X and Y values from the ESP32 status string
+                    # Example format: "E1: 100 | E2: 200 | X: 12.34 | Y: 5.67 | ..."
+                    try:
+                        if "X:" in esp_text and "Y:" in esp_text:
+                            parts = esp_text.split("|")
+                            for part in parts:
+                                part = part.strip()
+                                if part.startswith("X:"):
+                                    # Extract number after "X: "
+                                    self.pos_x = float(part.split(":")[1].strip())
+                                elif part.startswith("Y:"):
+                                    # Extract number after "Y: "
+                                    self.pos_y = float(part.split(":")[1].strip())
+
+                            # Push the newly parsed physical coordinates to the UI
+                            self._update_coords_display()
+                    except (ValueError, IndexError) as e:
+                        # Silently ignore parsing errors from incomplete serial strings
+                        pass
                 elif msg.get("type") == "stat_update":
                     key, value = msg.get("key"), msg.get("value")
                     if key and value is not None:
@@ -1267,6 +1341,10 @@ class GUI:
                 current_key = "2"
             elif dpg.does_item_exist("btn_gripper_control") and dpg.is_item_active("btn_gripper_control"):
                 current_key = "v"
+            elif dpg.does_item_exist("btn_homing_control") and dpg.is_item_active("btn_homing_control"):
+                current_key = "h"
+            elif dpg.does_item_exist("btn_centering_control") and dpg.is_item_active("btn_centering_control"):
+                current_key = "c"
 
             if not current_key:
                 # Keyboard input is already forwarded by comms_worker
