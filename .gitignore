@@ -33,7 +33,7 @@ MANIFEST
 #  Usually these files are written by a python script from a template
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
-*.spec
+#*.spec
 
 # Installer logs
 pip-log.txt
@@ -217,3 +217,5 @@ Beta_v2_dataset/
 Beta_v3_dataset/
 Beta_v4_dataset/
 comms/.coverage
+Output/
+*.tar

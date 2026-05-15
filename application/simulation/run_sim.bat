@@ -25,6 +25,6 @@ set "WSL_PATH=/mnt/!LOWER_DRIVE!!FIXED_PATH!"
 if "!WSL_PATH:~-1!"=="/" set "WSL_PATH=!WSL_PATH:~0,-1!"
 
 echo Launching in: !WSL_PATH!
-wsl -d Ubuntu -e bash -c "cd '!WSL_PATH!' && docker compose down && docker compose up --build"
+wsl -d Ubuntu -e bash -c "cd '!WSL_PATH!' && docker compose down && docker compose up"
 
 if not defined CSAIMBOT_NO_PAUSE pause
