@@ -1,5 +1,6 @@
 services:
   sim:
+    build: .
     image: csaimbot_sim_image:latest
     container_name: csaimbot_sim
     working_dir: /sim_ws
