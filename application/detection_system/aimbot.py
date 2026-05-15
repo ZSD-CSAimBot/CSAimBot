@@ -14,6 +14,7 @@ class AimBot:
     """
     Real-time object detection system optimized for GPU execution.
     """
+
     def __init__(self, model_path):
         """
         Initialize the vision pipeline.
@@ -42,7 +43,7 @@ class AimBot:
 
         self.camera = CameraProvider(self.REGION)
         self.debug_frame = None
-    
+
     def prepare_model(self, model_path):
         """
         Load the YOLO model and run a CUDA warm-up pass.
@@ -50,14 +51,18 @@ class AimBot:
         Args:
             model_path: Path to the YOLO model weights.
         """
-        self.model = YOLO(model_path, task='detect')
-        warmup_input = torch.zeros((1, 3, self.FOV_HEIGHT, self.FOV_WIDTH), dtype=torch.float16, device="cuda")
+        self.model = YOLO(model_path, task="detect")
+        warmup_input = torch.zeros(
+            (1, 3, self.FOV_HEIGHT, self.FOV_WIDTH), dtype=torch.float16, device="cuda"
+        )
         self.model(warmup_input, verbose=False)
 
     def allocate_variables(self):
         """Initialize runtime state used during inference and display."""
         self.show_debug_window = True
-        self.model_tensor = torch.empty((1, 3, self.FOV_HEIGHT, self.FOV_WIDTH), dtype=torch.float16, device="cuda")
+        self.model_tensor = torch.empty(
+            (1, 3, self.FOV_HEIGHT, self.FOV_WIDTH), dtype=torch.float16, device="cuda"
+        )
         self.best_target_position = (0, 0)
         self.shoot_threshold = 2
         self.recoil_strength = 5
@@ -70,10 +75,10 @@ class AimBot:
         dl_tensor = self.camera.grab_gpu_tensor()
         if dl_tensor is not None:
             if self.show_debug_window:
-                self.debug_frame = dl_tensor.cpu().numpy() 
-            self.model_tensor[0, 0].copy_(dl_tensor[:, :, 2]) # R
-            self.model_tensor[0, 1].copy_(dl_tensor[:, :, 1]) # G
-            self.model_tensor[0, 2].copy_(dl_tensor[:, :, 0]) # B
+                self.debug_frame = dl_tensor.cpu().numpy()
+            self.model_tensor[0, 0].copy_(dl_tensor[:, :, 2])  # R
+            self.model_tensor[0, 1].copy_(dl_tensor[:, :, 1])  # G
+            self.model_tensor[0, 2].copy_(dl_tensor[:, :, 0])  # B
             self.model_tensor.div_(255.0)
             return True
         return False
@@ -90,14 +95,17 @@ class AimBot:
             A tuple containing the adjusted x and y offsets.
         """
         if self.recoil_control:
-            if abs(offset_x) < self.shoot_threshold and abs(offset_y) < self.shoot_threshold:
+            if (
+                abs(offset_x) < self.shoot_threshold
+                and abs(offset_y) < self.shoot_threshold
+            ):
                 offset_y += self.recoil_strength
         return offset_x, offset_y
-    
+
     def update_recoil_state(self, boxes_data_tensor):
         """
         Check if the current detections include the rifle class to determine if recoil control should be active.
-            
+
         Args:
             boxes_data_tensor: Tensor of detections in xyxy format with class ids.
         """
@@ -119,32 +127,27 @@ class AimBot:
             A tuple of offsets from screen center, or (None, None) when no valid target exists.
         """
         if boxes_data_tensor is None or boxes_data_tensor.shape[0] == 0:
-            print(f"<AIMBOT_TARGET> No boxes data", flush=True)
             return None, None
 
         cls = boxes_data_tensor[:, 5]
-        valid_classes = torch.tensor(self.head_class_id + self.body_class_id, device=boxes_data_tensor.device)
+        valid_classes = torch.tensor(
+            self.head_class_id + self.body_class_id, device=boxes_data_tensor.device
+        )
         mask = torch.isin(cls, valid_classes)
         valid_boxes = boxes_data_tensor[mask]
 
-        print(f"<AIMBOT_TARGET> Total detections: {len(cls)}, Valid boxes (head/body): {len(valid_boxes)}", flush=True)
-        print(f"<AIMBOT_TARGET> head_class_id: {self.head_class_id}, body_class_id: {self.body_class_id}", flush=True)
-
         if valid_boxes.shape[0] == 0:
-            print(f"<AIMBOT_TARGET> No valid target classes found", flush=True)
             return None, None
 
         centers_x = (valid_boxes[:, 0] + valid_boxes[:, 2]) / 2.0
         centers_y = (valid_boxes[:, 1] + valid_boxes[:, 3]) / 2.0
         offsets_x = centers_x - (self.FOV_WIDTH / 2.0)
         offsets_y = centers_y - (self.FOV_HEIGHT / 2.0)
-        distances_sq = (offsets_x ** 2) + (offsets_y ** 2)
+        distances_sq = (offsets_x**2) + (offsets_y**2)
         best_idx = torch.argmin(distances_sq)
 
         offset_x = int(round(offsets_x[best_idx].item()))
         offset_y = int(round(offsets_y[best_idx].item()))
-
-        print(f"<AIMBOT_TARGET> Best target offset: x={offset_x}, y={offset_y}", flush=True)
 
         return self.recoil_compensation(offset_x, offset_y)
 
@@ -158,7 +161,7 @@ class AimBot:
                 valid_targets_mask = np.isin(cls, valid_classes)
                 valid_boxes = xyxy[valid_targets_mask]
                 valid_cls = cls[valid_targets_mask]
-                
+
                 for i, box in enumerate(valid_boxes):
                     x1, y1, x2, y2 = map(int, box)
                     class_id = valid_cls[i]
@@ -175,16 +178,33 @@ class AimBot:
 
                 target_x = int(center_x + offset_x)
                 target_y = int(center_y + offset_y)
-                cv2.line(self.debug_frame, (center_x, center_y), (target_x, target_y), (0, 0, 255, 255), 2)
+                cv2.line(
+                    self.debug_frame,
+                    (center_x, center_y),
+                    (target_x, target_y),
+                    (0, 0, 255, 255),
+                    2,
+                )
                 info_text = f"X: {float(offset_x):.1f}px | Y: {float(offset_y):.1f}px"
-                cv2.putText(self.debug_frame, info_text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 255, 255), 2)
-            
+                cv2.putText(
+                    self.debug_frame,
+                    info_text,
+                    (20, 40),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    1.0,
+                    (0, 255, 255, 255),
+                    2,
+                )
+
             cv2.imshow("Aimbot Vision (Debug)", self.debug_frame)
             cv2.waitKey(1)
         else:
-            if cv2.getWindowProperty("Aimbot Vision (Debug)", cv2.WND_PROP_VISIBLE) >= 1:
+            if (
+                cv2.getWindowProperty("Aimbot Vision (Debug)", cv2.WND_PROP_VISIBLE)
+                >= 1
+            ):
                 cv2.destroyWindow("Aimbot Vision (Debug)")
-    
+
     def process_single_frame(self):
         """Run one full capture, inference, and display cycle."""
         if not self.capture_and_preprocess_frame():
@@ -196,12 +216,10 @@ class AimBot:
         if results[0].boxes is not None and len(results[0].boxes) > 0:
             result_tensor = results[0].boxes.data
             num_detections = len(results[0].boxes)
-            print(f"<AIMBOT_FRAME> Detections found: {num_detections}", flush=True)
 
             self.recoil_control = self.update_recoil_state(result_tensor)
             result = self.calculate_best_target_position(result_tensor)
             self.best_target_position = result if result[0] is not None else ("-", "-")
-            print(f"<AIMBOT_FRAME> best_target_position calculated: {self.best_target_position}", flush=True)
 
             if self.show_debug_window:
                 cpu_numpy_data = result_tensor.cpu().numpy()
@@ -209,7 +227,6 @@ class AimBot:
         else:
             self.recoil_control = False
             self.best_target_position = ("-", "-")
-            print(f"<AIMBOT_FRAME> No detections", flush=True)
             if self.show_debug_window:
                 self.display_results(None)
 
@@ -265,10 +282,7 @@ def vision_worker(pipe_conn, model_path, target_fps):
                 try:
                     offset_x = aimbot.best_target_position[0]
                     offset_y = aimbot.best_target_position[1]
-                    # DEBUG: Print data being sent
-                    print(f"<AIMBOT_SEND> best_target_position: x={offset_x}, y={offset_y}", flush=True)
-                    pipe_conn.send(
-                        {"type": "offsets", "x": offset_x, "y": offset_y})
+                    pipe_conn.send({"type": "offsets", "x": offset_x, "y": offset_y})
                 except Exception as e:
                     print(e)
                     pass
@@ -279,7 +293,7 @@ def vision_worker(pipe_conn, model_path, target_fps):
                     time.sleep(target_frame_time - elapsed_time)
             else:
                 time.sleep(0.05)
-                
+
     except KeyboardInterrupt:
         pass
     finally:

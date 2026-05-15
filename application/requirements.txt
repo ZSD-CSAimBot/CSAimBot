@@ -15,8 +15,6 @@ dearpygui==2.2
 numpy==2.4.4
 pyserial==3.5
 roslibpy==2.0.0
-PyQt6==6.11.0
-pytest==9.0.3
 pynput==1.8.1
 screeninfo==0.8.1
 

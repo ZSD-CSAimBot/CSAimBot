@@ -17,10 +17,11 @@ class SerialCommsModule:
     This class manages serial communication with the ESP32 microcontroller.
     It provides methods to connect, send commands, receive responses, and disconnect.
     """
+
     def __init__(self, port=None, baud_rate=115200, timeout=0.05):
         """
         Initialize serial communication module with platform-specific default port.
-        
+
         Args:
             port: Serial port name (auto-detected if None)
             baud_rate: Communication speed in bits/second (default: 115200)
@@ -73,12 +74,12 @@ class SerialCommsModule:
             True if ESP32 is responsive, False otherwise
         """
         esp.reset_input_buffer()
-        esp.write(f"ESP32-CHECK\r".encode('utf-8'))
+        esp.write(f"ESP32-CHECK\r".encode("utf-8"))
         esp.flush()
         start_time = time.time()
         while time.time() - start_time < 5.0:
             if esp.in_waiting > 0:
-                response = esp.readline().decode('utf-8', errors='ignore').strip()
+                response = esp.readline().decode("utf-8", errors="ignore").strip()
                 if response == "ESP32-READY":
                     print(f"Connected on {port}.")
                     return True
@@ -88,12 +89,12 @@ class SerialCommsModule:
     def send_command(self, command):
         """
         Encode and send command to ESP32. Appends carriage return for protocol.
-        
+
         Args:
             command: Command string to send
         """
         if self.esp and self.esp.is_open:
-            text_to_send = f"{command}\r".encode('utf-8')
+            text_to_send = f"{command}\r".encode("utf-8")
             self.esp.write(text_to_send)
             self.esp.flush()
             print(f"Sent: {command}")
@@ -103,12 +104,12 @@ class SerialCommsModule:
     def get_response(self):
         """
         Read response from ESP32.
-        
+
         Returns:
             Response string if available, None otherwise
         """
         if self.esp and self.esp.is_open:
-            response = self.esp.readline().decode('utf-8', errors='ignore').strip()
+            response = self.esp.readline().decode("utf-8", errors="ignore").strip()
             if response:
                 return response
             return None
@@ -128,10 +129,10 @@ class SerialCommsModule:
 def comms_worker(conn):
     """
     Manage multiprocess communication between GUI, ESP32, and keyboard input.
-    
+
     Runs in a separate process and handles command dispatch to ESP32,
     response reception, and keyboard state transmission back to GUI.
-    
+
     Args:
         conn: multiprocessing.Connection object for IPC
     """
@@ -186,31 +187,43 @@ def comms_worker(conn):
 class KeyboardInputModule:
     """
     Keyboard input listener using pynput library.
-    
+
     Tracks specific keys for device control and an emergency stop key.
     Runs a background listener thread to capture key events.
     """
+
     def __init__(self, tracked_keys=None, estop_key="p"):
         """
         Initialize keyboard listener.
-        
+
         Args:
             tracked_keys: List of keys to monitor (default: movement and control keys)
             estop_key: Emergency stop key character (default: 'p')
         """
-        self.tracked_keys = tracked_keys or ['i', 'j', 'k', 'l', 'z', 'x', 'v', '1', '2', 'h', 'c']
+        self.tracked_keys = tracked_keys or [
+            "i",
+            "j",
+            "k",
+            "l",
+            "z",
+            "x",
+            "v",
+            "1",
+            "2",
+            "h",
+            "c",
+        ]
         self.estop_key = estop_key
         self.pressed_keys = set()
         self.listener = pynput_kb.Listener(
-            on_press=self.on_press,
-            on_release=self.on_release
+            on_press=self.on_press, on_release=self.on_release
         )
         self.listener.start()
 
     def on_press(self, key):
         """
         Handle key press event. Add to pressed_keys set if tracked or estop.
-        
+
         Args:
             key: pynput Key object from listener
         """
@@ -224,7 +237,7 @@ class KeyboardInputModule:
     def on_release(self, key):
         """
         Handle key release event. Remove from pressed_keys set.
-        
+
         Args:
             key: pynput Key object from listener
         """
@@ -238,7 +251,7 @@ class KeyboardInputModule:
     def get_key(self):
         """
         Get current keyboard state.
-        
+
         Returns:
             Emergency stop key if pressed, otherwise string of all active tracked keys
         """
@@ -252,4 +265,6 @@ class KeyboardInputModule:
 
 
 if __name__ == "__main__":
-    print("This module is not meant to be run directly. Please run the main application instead.")
+    print(
+        "This module is not meant to be run directly. Please run the main application instead."
+    )
