@@ -1,5 +1,7 @@
-
+import os
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules, collect_dynamic_libs
+
+PROJECT_ROOT = os.path.abspath(os.path.join(SPECPATH, '..'))
 
 block_cipher = None
 
@@ -22,14 +24,14 @@ hidden_deps += collect_submodules('cupy')
 hidden_deps += collect_submodules('cupy_backends')
 
 a = Analysis(
-    ['application/app.py'],
-    pathex=['.'],
+    [os.path.join(PROJECT_ROOT, 'application', 'app.py')],
+    pathex=[PROJECT_ROOT],
     binaries=bin_deps,
     datas=[
-        ('application/detection_system/yolo/trained_model.pt', 'application/detection_system/yolo'),
-        ('application/gui_design/fonts', 'application/gui_design/fonts'),
-        ('application/gui_design/icons', 'application/gui_design/icons'),
-        ('application/simulation', 'application/simulation')
+        (os.path.join(PROJECT_ROOT, 'application', 'detection_system', 'yolo', 'trained_model.pt'), 'application/detection_system/yolo'),
+        (os.path.join(PROJECT_ROOT, 'application', 'gui_design', 'fonts'), 'application/gui_design/fonts'),
+        (os.path.join(PROJECT_ROOT, 'application', 'gui_design', 'icons'), 'application/gui_design/icons'),
+        (os.path.join(PROJECT_ROOT, 'application', 'simulation'), 'application/simulation')
     ] + data_deps,
     hiddenimports=hidden_deps,
     hookspath=[],
@@ -42,11 +44,13 @@ a = Analysis(
     noarchive=False,
 )
 
-for root, _, files in os.walk('application/simulation'):
+simulation_src_path = os.path.join(PROJECT_ROOT, 'application', 'simulation')
+for root, _, files in os.walk(simulation_src_path):
     for file in files:
-        if file.endswith('.py') or file.endswith('.tar'):
+        if file.endswith('.py'):
             full_path = os.path.join(root, file)
-            dest_folder = root.replace('\\', '/')
+            rel_path = os.path.relpath(root, PROJECT_ROOT)
+            dest_folder = rel_path.replace('\\', '/')
             a.datas.append((full_path, dest_folder, 'DATA'))
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
@@ -61,7 +65,7 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
-    console=True,
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
