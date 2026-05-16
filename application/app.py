@@ -10,6 +10,7 @@ if sys.stderr is None:
     sys.stderr = open(os.devnull, "w")
 
 from comms.comms import comms_worker
+from comms.mouse_blocker_worker import mouse_blocker_worker
 from gui_design.gui import GUI
 
 # Ensure local application packages are importable when launched directly.
@@ -84,6 +85,7 @@ if __name__ == "__main__":
     gui_vision_conn, vision_worker_conn = mp.Pipe()
     gui_comms_conn, comms_worker_conn = mp.Pipe()
     gui_sim_conn, sim_worker_conn = mp.Pipe()
+    gui_mouse_blocker_conn, mouse_blocker_conn = mp.Pipe()
 
     vision_process = mp.Process(
         target=run_vision_worker, args=(vision_worker_conn, MODEL_PATH, 60), daemon=True
@@ -100,8 +102,13 @@ if __name__ == "__main__":
     )
     sim_process.start()
 
+    mouse_blocker_process = mp.Process(
+        target=mouse_blocker_worker, args=(mouse_blocker_conn,), daemon=True
+    )
+    mouse_blocker_process.start()
+
     try:
-        app = GUI(gui_vision_conn, gui_comms_conn, gui_sim_conn)
+        app = GUI(gui_vision_conn, gui_comms_conn, gui_sim_conn, gui_mouse_blocker_conn)
         app.run()
     except Exception as e:
         import traceback
@@ -112,11 +119,13 @@ if __name__ == "__main__":
             gui_vision_conn.send({"cmd": "QUIT"})
             gui_comms_conn.send({"cmd": "QUIT"})
             gui_sim_conn.send({"cmd": "QUIT"})
+            gui_mouse_blocker_conn.send({"cmd": "QUIT"})
         except Exception:
             pass
         vision_process.join(timeout=2)
         comms_process.join(timeout=2)
         sim_process.join(timeout=2)
+        mouse_blocker_process.join(timeout=2)
 
         if vision_process.is_alive():
             vision_process.terminate()
@@ -124,3 +133,5 @@ if __name__ == "__main__":
             comms_process.terminate()
         if sim_process.is_alive():
             sim_process.terminate()
+        if mouse_blocker_process.is_alive():
+            mouse_blocker_process.terminate()

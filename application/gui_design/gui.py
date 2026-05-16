@@ -17,7 +17,7 @@ from utils.json_utils import StatsManager
 class GUI:
     """Main Dear PyGui application wrapper."""
 
-    def __init__(self, vision_pipe, comms_pipe, sim_pipe):
+    def __init__(self, vision_pipe, comms_pipe, sim_pipe, mouse_blocker_pipe=None):
         """
         Initialize the GUI and wire up IPC channels.
 
@@ -25,10 +25,12 @@ class GUI:
             vision_pipe: Pipe used to communicate with the vision worker.
             comms_pipe: Pipe used to communicate with the serial worker.
             sim_pipe: Pipe used to communicate with the simulation worker.
+            mouse_blocker_pipe: Pipe used to start/stop the mouse blocker worker.
         """
         self.pipe = vision_pipe
         self.comms_pipe = comms_pipe
         self.sim_pipe = sim_pipe
+        self.mouse_blocker_pipe = mouse_blocker_pipe
         self.simulation_state = "stopped"
         self.running = True
         self.sidebar_expanded = False
@@ -1845,7 +1847,7 @@ class GUI:
                             txt = dpg.add_text(
                                 item_config["label"], show=False, tag=text_tag
                             )
-                            dpg.bind_item_theme(txt, self.gray_text_theme)
+                            dpg.bind_item_theme(txt, self.gold_text_theme)
 
                             with dpg.item_handler_registry() as text_click_handler:
                                 dpg.add_item_clicked_handler(
@@ -2062,12 +2064,16 @@ class GUI:
                 dpg.set_value(tag_z, formatted_z)
 
     def on_start(self):
-        """Start the vision worker."""
+        """Start the vision worker and activate mouse blocker."""
         self.pipe.send({"cmd": "START"})
+        if self.mouse_blocker_pipe:
+            self.mouse_blocker_pipe.send({"cmd": "START"})
 
     def on_stop(self):
-        """Stop the vision worker and send an emergency stop to the controller."""
+        """Stop the vision worker, deactivate mouse blocker, and emergency-stop the controller."""
         self.pipe.send({"cmd": "STOP"})
+        if self.mouse_blocker_pipe:
+            self.mouse_blocker_pipe.send({"cmd": "STOP"})
         if self.is_connected:
             self.comms_pipe.send(
                 {"cmd": "SEND", "value": f"0,0,{self.current_speed},p"}
