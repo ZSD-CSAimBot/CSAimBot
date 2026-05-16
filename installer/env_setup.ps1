@@ -6,7 +6,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 }
 
 Write-Host "=== Checking Environment ===" -ForegroundColor Cyan
-Write-Host "`n[1/3] Checking WSL and Ubuntu..." -ForegroundColor Yellow
+Write-Host "`n[1/4] Checking WSL and Ubuntu..." -ForegroundColor Yellow
 
 wsl.exe -d Ubuntu -e true 2>$null
 $ubuntuInstalled = ($LASTEXITCODE -eq 0)
@@ -24,7 +24,7 @@ if (-not $ubuntuInstalled) {
     Write-Host "WSL and Ubuntu are already installed and working correctly." -ForegroundColor Green
 }
 
-Write-Host "`n[2/3] Checking Docker inside Ubuntu..." -ForegroundColor Yellow
+Write-Host "`n[2/4] Checking Docker inside Ubuntu..." -ForegroundColor Yellow
 
 wsl.exe -d Ubuntu -- bash -c "command -v docker" > $null 2>&1
 $dockerInstalled = ($LASTEXITCODE -eq 0)
@@ -42,7 +42,27 @@ if (-not $dockerInstalled) {
     Write-Host "Docker is already installed: $dockerVersion" -ForegroundColor Green
 }
 
-Write-Host "`n[3/3] Checking native CUDA Toolkit 12.8 for Windows..." -ForegroundColor Yellow
+Write-Host "`n[3/4] Checking NVIDIA Container Toolkit inside Ubuntu..." -ForegroundColor Yellow
+
+wsl.exe -d Ubuntu -- bash -c "command -v nvidia-ctk" > $null 2>&1
+$nvidiaCtkInstalled = ($LASTEXITCODE -eq 0)
+
+if (-not $nvidiaCtkInstalled) {
+    Write-Host "ERROR: NVIDIA Container Toolkit not found in Ubuntu. Starting installation..." -ForegroundColor Cyan
+
+    wsl.exe -d Ubuntu -- bash -c "curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg --yes"
+    wsl.exe -d Ubuntu -- bash -c "curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list"
+    wsl.exe -d Ubuntu -- bash -c "sudo apt-get update"
+    wsl.exe -d Ubuntu -- bash -c "sudo apt-get install -y nvidia-container-toolkit"
+    wsl.exe -d Ubuntu -- bash -c "sudo nvidia-ctk runtime configure --runtime=docker"
+    wsl.exe -d Ubuntu -- bash -c "sudo service docker restart"
+    
+    Write-Host "NVIDIA Container Toolkit has been successfully installed and configured!" -ForegroundColor Green
+} else {
+    Write-Host "NVIDIA Container Toolkit is already installed and configured." -ForegroundColor Green
+}
+
+Write-Host "`n[4/4] Checking native CUDA Toolkit 12.8 for Windows..." -ForegroundColor Yellow
 
 $cuda128Path = $env:CUDA_PATH_V12_8
 $nvccExists = Get-Command nvcc -ErrorAction SilentlyContinue

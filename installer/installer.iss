@@ -1,12 +1,13 @@
 [Setup]
 AppName=CsAimBot
-AppVersion=1.0
+AppVersion=2.0
 AppPublisher=CsAimBot Team
 DefaultDirName={pf}\CsAimBot
 DefaultGroupName=CsAimBot
-OutputBaseFilename=CsAimBot_Installer
-Compression=none
-SolidCompression=no
+OutputBaseFilename=CsAimBot-Installer-x64-v2
+Compression=lzma2/ultra64
+SolidCompression=yes
+LZMAAlgorithm=1
 DiskSpanning=yes
 ArchitecturesInstallIn64BitMode=x64
 PrivilegesRequired=admin
@@ -14,7 +15,7 @@ PrivilegesRequired=admin
 [Files]
 Source: "env_setup.ps1"; DestDir: "{tmp}"; Flags: dontcopy
 Source: "dist\CsAimBot\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "application\simulation\gazebo_sim.tar"; DestDir: "{app}\_internal\application\simulation"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "..\application\simulation\gazebo_sim.tar"; DestDir: "{app}\_internal\application\simulation"; Flags: ignoreversion skipifsourcedoesntexist
 
 [Icons]
 Name: "{group}\CsAimBot"; Filename: "{app}\CsAimBot.exe"
@@ -22,7 +23,7 @@ Name: "{commondesktop}\CsAimBot"; Filename: "{app}\CsAimBot.exe"
 
 [Run]
 Filename: "{app}\CsAimBot.exe"; Parameters: "--export-only"; StatusMsg: "Eksportowanie modelu YOLO do formatu TensorRT (moze to potrwac kilka minut)..."; Flags: waituntilterminated
-Filename: "wsl.exe"; Parameters: "-d Ubuntu -e bash -c ""docker load -i $(wslpath '{app}\_internal\application\simulation\gazebo_sim.tar')"""; StatusMsg: "Wczytywanie obrazu Gazebo do Dockera na WSL..."; Flags: waituntilterminated skipifdoesntexist
+Filename: "wsl.exe"; Parameters: "-d Ubuntu -e bash -c ""docker load -i $(wslpath '{tmp}\gazebo_sim.tar')"""; StatusMsg: "Wczytywanie obrazu Gazebo do Dockera na WSL..."; Flags: waituntilterminated skipifdoesntexist
 
 [Code]
 procedure InitializeWizard;
@@ -46,9 +47,19 @@ function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   ResultCode: Integer;
 begin
-  ExtractTemporaryFile('env_setup.ps1');
-  Exec('powershell.exe', 
-       '-ExecutionPolicy Bypass -NoLogo -File "' + ExpandConstant('{tmp}\env_setup.ps1') + '"', 
-       '', SW_SHOW, ewWaitUntilTerminated, ResultCode);
   Result := '';
+  ExtractTemporaryFile('env_setup.ps1');
+  
+  if Exec('powershell.exe', 
+          '-ExecutionPolicy Bypass -NoLogo -File "' + ExpandConstant('{tmp}\env_setup.ps1') + '"', 
+          '', SW_SHOW, ewWaitUntilTerminated, ResultCode) then
+  begin
+    if ResultCode <> 0 then
+    begin
+      Result := 'Konfiguracja środowiska nie powiodła się lub wymagany jest ponowny start komputera (Kod błędu: ' + IntToStr(ResultCode) + ').' + #13#10 + #13#10 +
+                'Jeśli instalowano WSL, uruchom komputer ponownie i włącz instalator jeszcze raz.';
+    end;
+  end else begin
+    Result := 'Nie można uruchomić wewnętrznego skryptu weryfikacji środowiska (env_setup.ps1).';
+  end;
 end;
