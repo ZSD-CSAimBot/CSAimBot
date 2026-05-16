@@ -165,7 +165,7 @@ def comms_worker(conn):
         try:
             if is_connected and esp.esp and esp.esp.in_waiting > 0:
                 response = esp.get_response()
-                print(f"Received from ESP: {response}")
+                #print(f"Received from ESP: {response}")
                 if response:
                     conn.send({"type": "esp_msg", "value": response})
         except Exception as e:
@@ -198,7 +198,7 @@ class KeyboardInputModule:
             tracked_keys: List of keys to monitor (default: movement and control keys)
             estop_key: Emergency stop key character (default: 'p')
         """
-        self.tracked_keys = tracked_keys or ['i', 'j', 'k', 'l', 'z', 'x', 'v', '1', '2', 'h', 'c']
+        self.tracked_keys = tracked_keys or ['i', 'j', 'k', 'l', 'z', 'x', 'v', '1', '2', 'h', 'c',',','.']
         self.estop_key = estop_key
         self.pressed_keys = set()
         self.listener = pynput_kb.Listener(

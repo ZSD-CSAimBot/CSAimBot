@@ -43,6 +43,8 @@ class GUI:
         self.pos_x = 0
         self.pos_y = 0
         self.pos_z = 0
+        self.enc_1 = 0
+        self.enc_2 = 0
 
         # Vision target offsets from aimbot.py.
         # These must NOT be mixed with manual jog coordinates.
@@ -50,13 +52,18 @@ class GUI:
         self.target_offset_y = 0
         self.manual_keys = ""
         self.current_speed = 75
-        # PID Controller variables for visual servoing
-        self.kp = 0.4  # Proportional gain (depends on current error)
-        self.ki = 0.0  # Integral gain (depends on sum of past errors)
-        self.kd = 0.1  # Derivative gain (depends on rate of error change)
+        # PD ORLUK ZMIANA NA LEPSZE :)
+
+        self.kp = 0.25
+        self.ki = 0.0
+        self.kd = 0.0
+
         self.pid_integral = 0.0
         self.pid_prev_error = 0.0
         self.pid_last_time = time.time()
+
+
+
         self.current_scale = 1.0
 
         # Dictionary for smart management of forced dimension responsiveness
@@ -693,28 +700,31 @@ class GUI:
                                 with dpg.group(horizontal=True):
                                     dpg.add_spacer(width=10, tag=self.rs(w=10))
                                     with dpg.group():
-                                        dpg.add_text("System Logs:", color=[255, 183, 0])
+                                        dpg.add_text("Wciśnięte klawisze:", color=[255, 183, 0])
+                                        dpg.add_text("[ BRAK ]", tag="current_keys_text_home", color=[50, 200, 50])
+                                        dpg.add_spacer(height=5, tag=self.rs(h=5))
+
+                                        dpg.add_text("System Logs:", tag="txt_logs_home", color=[255, 183, 0])
                                         with dpg.group(tag="logs_group_home"):
                                             dpg.add_text("<System> Robot Control Active", color=[255, 255, 255])
                                         dpg.bind_item_theme("logs_group_home", self.white_text_theme)
-                                        dpg.add_spacer(height=20, tag=self.rs(h=20))
-                                        dpg.add_text("Wciśnięte klawisze:", color=[255, 183, 0])
-                                        dpg.add_text("[ BRAK ]", tag="current_keys_text", color=[50, 200, 50])
 
                             dpg.add_spacer(width=33, tag=self.rs(w=33))
 
                             with dpg.group():
-                                with dpg.child_window(width=280, height=165, tag=self.rs(280, 165)):
-                                    dpg.add_spacer(height=16, tag=self.rs(h=16))
-                                    axes = ["X", "Y", "Z"]
+                                with dpg.child_window(width=280, height=220, tag=self.rs(280, 220)):
+                                    dpg.add_spacer(height=10, tag=self.rs(h=10))
+                                    axes = ["X", "Y", "Z", "Enc 1", "Enc 2"]
                                     for axis in axes:
                                         with dpg.group(horizontal=True):
                                             dpg.add_spacer(width=40, tag=self.rs(w=40))
                                             axis_label = dpg.add_text(f"{axis}: ")
                                             dpg.bind_item_theme(axis_label, self.white_text_theme)
-                                            axis_value = dpg.add_text("0.00", tag=f"coord_{axis.lower()}_home")
+                                            clean_tag = axis.lower().replace(" ", "")
+                                            default_val = "0" if "enc" in clean_tag else "0.00"
+                                            axis_value = dpg.add_text(default_val, tag=f"coord_{clean_tag}_home")
                                             dpg.bind_item_theme(axis_value, self.white_text_theme)
-                                        dpg.add_spacer(height=18, tag=self.rs(h=18))
+                                        dpg.add_spacer(height=8, tag=self.rs(h=8))
 
                                 dpg.add_spacer(height=10, tag=self.rs(h=10))
                                 self.add_sim_controls("home")
@@ -737,7 +747,11 @@ class GUI:
                                 with dpg.group(horizontal=True):
                                     dpg.add_spacer(width=10, tag=self.rs(w=10))
                                     with dpg.group():
-                                        dpg.add_text("System Logs:", color=[255, 183, 0])
+                                        dpg.add_text("Wciśnięte klawisze:", color=[255, 183, 0])
+                                        dpg.add_text("[ BRAK ]", tag="current_keys_text_control", color=[50, 200, 50])
+                                        dpg.add_spacer(height=5, tag=self.rs(h=5))
+
+                                        dpg.add_text("System Logs:", tag="txt_logs_control", color=[255, 183, 0])
                                         with dpg.group(tag="logs_group_control"):
                                             self.add_log("<System> Robot Control Active", parent="logs_group_control")
                                         dpg.bind_item_theme("logs_group_control", self.white_text_theme)
@@ -885,17 +899,19 @@ class GUI:
                             dpg.add_spacer(width=40, tag=self.rs(w=40))
 
                             with dpg.group():
-                                with dpg.child_window(width=280, height=165, tag=self.rs(280, 165)):
-                                    dpg.add_spacer(height=16, tag=self.rs(h=16))
-                                    axes = ["X", "Y", "Z"]
+                                with dpg.child_window(width=280, height=220, tag=self.rs(280, 220)):
+                                    dpg.add_spacer(height=10, tag=self.rs(h=10))
+                                    axes = ["X", "Y", "Z", "Enc 1", "Enc 2"]
                                     for axis in axes:
                                         with dpg.group(horizontal=True):
                                             dpg.add_spacer(width=40, tag=self.rs(w=40))
                                             axis_label = dpg.add_text(f"{axis}: ")
                                             dpg.bind_item_theme(axis_label, self.white_text_theme)
-                                            axis_value = dpg.add_text("0.00", tag=f"coord_{axis.lower()}_control")
+                                            clean_tag = axis.lower().replace(" ", "")
+                                            default_val = "0" if "enc" in clean_tag else "0.00"
+                                            axis_value = dpg.add_text(default_val, tag=f"coord_{clean_tag}_control")
                                             dpg.bind_item_theme(axis_value, self.white_text_theme)
-                                        dpg.add_spacer(height=18, tag=self.rs(h=18))
+                                        dpg.add_spacer(height=8, tag=self.rs(h=8))
 
                                 dpg.add_spacer(height=10, tag=self.rs(h=10))
                                 self.add_sim_controls("control")
@@ -1212,6 +1228,8 @@ class GUI:
         formatted_x = f"{self.pos_x:.2f}"
         formatted_y = f"{self.pos_y:.2f}"
         formatted_z = f"{self.pos_z:.2f}"
+        formatted_e1 = f"{self.enc_1}"
+        formatted_e2 = f"{self.enc_2}"
 
         for tag_x in ["coord_x_control", "coord_x_home"]:
             if dpg.does_item_exist(tag_x): dpg.set_value(tag_x, formatted_x)
@@ -1219,6 +1237,10 @@ class GUI:
             if dpg.does_item_exist(tag_y): dpg.set_value(tag_y, formatted_y)
         for tag_z in ["coord_z_control", "coord_z_home"]:
             if dpg.does_item_exist(tag_z): dpg.set_value(tag_z, formatted_z)
+        for tag_e1 in ["coord_enc1_control", "coord_enc1_home"]:
+            if dpg.does_item_exist(tag_e1): dpg.set_value(tag_e1, formatted_e1)
+        for tag_e2 in ["coord_enc2_control", "coord_enc2_home"]:
+            if dpg.does_item_exist(tag_e2): dpg.set_value(tag_e2, formatted_e2)
 
     def on_start(self):
         """Start the vision worker."""
@@ -1261,6 +1283,8 @@ class GUI:
             if dpg.does_item_exist(stop_tag):
                 dpg.configure_item(stop_tag, enabled=is_running and not is_pending)
 
+
+
     def poll_pipe(self):
         """Process messages from the worker processes.
 
@@ -1285,56 +1309,79 @@ class GUI:
             if latest_vision_msg:
                 x_val = latest_vision_msg.get("x")
                 y_val = latest_vision_msg.get("y")
+                is_centered = bool(latest_vision_msg.get("is_centered", False))
+
+                if is_centered:
+                    print("<GUI> TARGET CENTERED", flush=True)
+                    self.add_log("<Vision> TARGET CENTERED", color=[80, 255, 80])
 
                 force_update = False
 
                 if x_val is None or y_val is None or x_val == "-" or y_val == "-":
                     if self.target_offset_x != 0 or self.target_offset_y != 0:
                         force_update = True
+
                     self.target_offset_x = 0
                     self.target_offset_y = 0
+
+                    # Reset PID when target disappears
+                    self.pid_integral = 0.0
+                    self.pid_prev_error = 0.0
+                    self.pid_last_time = time.time()
+
                 else:
                     try:
                         self.target_offset_x = int(x_val)
+
+                        # Vision: góra = Y ujemny, dół = Y dodatni.
+                        # ESP32: posY dodatni = moveUp, posY ujemny = moveDown.
+                        # Dlatego odwracamy Y.
                         self.target_offset_y = -int(y_val)
+
                     except (TypeError, ValueError):
                         self.target_offset_x = 0
                         self.target_offset_y = 0
 
+                        self.pid_integral = 0.0
+                        self.pid_prev_error = 0.0
+                        self.pid_last_time = time.time()
+
                 now = time.time()
+
                 if self.is_connected and not self.manual_keys:
-                    if force_update or (now - last_vision_send > 0.05):
+                    # 0.02 = około 50 Hz. Jeśli ESP/serial nie wyrabia, zmień na 0.03 albo 0.05.
+                    if force_update or (now - last_vision_send > 0.02):
 
                         dist = math.hypot(self.target_offset_x, self.target_offset_y)
 
                         # =====================================================
-                        # NON-LINEAR PROPORTIONAL CONTROLLER (Aggressive brake)
+                        # SIMPLE P CONTROLLER - STABLE VERSION
                         # =====================================================
-                        slowdown_radius = 350.0  # Pixels distance to start hitting the brakes
 
-                        if dist > slowdown_radius:
-                            dyn_speed = self.current_speed
-                        else:
-                            # Exponential deceleration using a power of 1.5
-                            # The closer the bot gets, the harder it brakes
-                            scale = (dist / slowdown_radius) ** 1.5
-                            dyn_speed = int(2 + (self.current_speed - 2) * scale)
+                        dyn_speed = int(self.kp * dist)
 
-                        # Safety clamp
-                        dyn_speed = max(2, min(dyn_speed, self.current_speed))
+                        # Clamp speed to GUI slider range
+                        dyn_speed = max(0, min(dyn_speed, self.current_speed))
 
-                        # Hard stop if within ESP32 deadzone
-                        if dist <= 15:
+                        # Hard stop near center.
+                        if dist <= 25:
                             dyn_speed = 0
 
-                        # DEBUG: Print real-time dynamic speed to the console
-                        if dist > 0:
-                            print(f"<AIMBOT> Dist: {dist:.0f}px | Speed sent: {dyn_speed}%", flush=True)
+                        # Debug
+                        print(
+                            f"<AIMBOT> Dist: {dist:.0f}px | "
+                            f"P speed: {dyn_speed}% | "
+                            f"kp={self.kp}",
+                            flush=True
+                        )
+
+                        extra_key = "1" if is_centered else ""
 
                         self.comms_pipe.send({
                             "cmd": "SEND",
-                            "value": f"{self.target_offset_x},{self.target_offset_y},{dyn_speed},"
+                            "value": f"{self.target_offset_x},{self.target_offset_y},{dyn_speed},{extra_key}"
                         })
+
                         last_vision_send = now
 
             # =================================================================
@@ -1342,10 +1389,12 @@ class GUI:
             # =================================================================
             while self.comms_pipe.poll():
                 msg = self.comms_pipe.recv()
+
                 if msg.get("type") == "connection_status":
                     self.connection_state = msg.get("status")
                     self.is_connected = (self.connection_state == "connected")
                     self.update_connection_display()
+
                 elif msg.get("type") == "keyboard":
                     keys = msg.get("keys") or ""
                     self.manual_keys = keys
@@ -1356,51 +1405,85 @@ class GUI:
                                 {"cmd": "SEND", "value": f"0,0,{self.current_speed},{keys}"}
                             )
                         else:
+                            # Po puszczeniu manual keys nie wysyłamy od razu starego offsetu z pełną prędkością.
+                            # Vision loop zaraz wyśle aktualną komendę z PD.
                             self.comms_pipe.send(
-                                {"cmd": "SEND",
-                                 "value": f"{self.target_offset_x},{self.target_offset_y},{self.current_speed},"}
+                                {"cmd": "SEND", "value": "0,0,0,"}
                             )
 
                     display_text = f"[ {keys.upper()} ]" if keys else "[ BRAK ]"
-                    if dpg.does_item_exist("current_keys_text"):
-                        dpg.set_value("current_keys_text", display_text)
+
+                    for tag in ["current_keys_text_home", "current_keys_text_control"]:
+                        if dpg.does_item_exist(tag):
+                            dpg.set_value(tag, display_text)
+
                 elif msg.get("type") == "esp_msg":
                     esp_text = msg.get("value")
                     print(f"<ESP32> {esp_text}", flush=True)
-                    # PARSING LOGIC: Extract X and Y values from the ESP32 status string
-                    # Example format: "E1: 100 | E2: 200 | X: 12.34 | Y: 5.67 | ..."
+
+                    if esp_text and ("EMERGENCY STOP" in esp_text or
+                                     "Moving to workspace center" in esp_text or
+                                     "Homing" in esp_text or
+                                     "Center reached" in esp_text or
+                                     "Centering" in esp_text):
+                        self.add_log(f"<ESP32> {esp_text}", color=[150, 200, 255])
+
+                    # PARSING LOGIC:
+                    # Example format:
+                    # "E1: 100 | E2: 200 | X: 12.34 | Y: 5.67 | Z: 0 | ..."
                     try:
-                        if "X:" in esp_text and "Y:" in esp_text:
+                        if esp_text and "X:" in esp_text and "Y:" in esp_text:
                             parts = esp_text.split("|")
+
                             for part in parts:
                                 part = part.strip()
-                                if part.startswith("X:"):
-                                    # Extract number after "X: "
+
+                                if part.startswith("E1:"):
+                                    self.enc_1 = int(float(part.split(":")[1].strip()))
+
+                                elif part.startswith("E2:"):
+                                    self.enc_2 = int(float(part.split(":")[1].strip()))
+
+                                elif part.startswith("X:"):
                                     self.pos_x = float(part.split(":")[1].strip())
+
                                 elif part.startswith("Y:"):
-                                    # Extract number after "Y: "
                                     self.pos_y = float(part.split(":")[1].strip())
 
-                            # Push the newly parsed physical coordinates to the UI
+                                elif part.startswith("Z:"):
+                                    self.pos_z = float(part.split(":")[1].strip())
+
                             self._update_coords_display()
-                    except (ValueError, IndexError) as e:
-                        # Silently ignore parsing errors from incomplete serial strings
+
+                    except (ValueError, IndexError, AttributeError):
                         pass
+
                 elif msg.get("type") == "stat_update":
                     key, value = msg.get("key"), msg.get("value")
+
                     if key and value is not None:
                         self.stats_manager.set(key, value)
                         tag = f"stat_val_{key}"
+
                         if dpg.does_item_exist(tag):
-                            dpg.configure_item(tag, label=StatsManager.format_value(key, value))
+                            dpg.configure_item(
+                                tag,
+                                label=StatsManager.format_value(key, value)
+                            )
+
                 elif msg.get("type") == "stat_increment":
                     key = msg.get("key")
                     amount = msg.get("amount", 1)
+
                     if key:
-                        self.stats_manager.increment(key, amount)
+                        new_val = self.stats_manager.increment(key, amount)
                         tag = f"stat_val_{key}"
+
                         if dpg.does_item_exist(tag):
-                            dpg.configure_item(tag, label=StatsManager.format_value(key, self.stats_manager.get(key)))
+                            dpg.configure_item(
+                                tag,
+                                label=StatsManager.format_value(key, new_val)
+                            )
 
             # =================================================================
             # 3. SIM PIPE - Receive side simulation status

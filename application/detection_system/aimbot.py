@@ -14,6 +14,7 @@ class AimBot:
     """
     Real-time object detection system optimized for GPU execution.
     """
+
     def __init__(self, model_path):
         """
         Initialize the vision pipeline.
@@ -31,6 +32,7 @@ class AimBot:
 
         SCREEN_WIDTH = monitor.width
         SCREEN_HEIGHT = monitor.height
+
         self.FOV_WIDTH = 1280
         self.FOV_HEIGHT = 736
 
@@ -38,11 +40,12 @@ class AimBot:
         RIGHT = LEFT + self.FOV_WIDTH
         TOP = (SCREEN_HEIGHT // 2) - (self.FOV_HEIGHT // 2)
         BOTTOM = TOP + self.FOV_HEIGHT
+
         self.REGION = (LEFT, TOP, RIGHT, BOTTOM)
 
         self.camera = CameraProvider(self.REGION)
         self.debug_frame = None
-    
+
     def prepare_model(self, model_path):
         """
         Load the YOLO model and run a CUDA warm-up pass.
@@ -50,32 +53,66 @@ class AimBot:
         Args:
             model_path: Path to the YOLO model weights.
         """
-        self.model = YOLO(model_path, task='detect')
-        warmup_input = torch.zeros((1, 3, self.FOV_HEIGHT, self.FOV_WIDTH), dtype=torch.float16, device="cuda")
+        self.model = YOLO(model_path, task="detect")
+
+        warmup_input = torch.zeros(
+            (1, 3, self.FOV_HEIGHT, self.FOV_WIDTH),
+            dtype=torch.float16,
+            device="cuda"
+        )
+
         self.model(warmup_input, verbose=False)
 
     def allocate_variables(self):
         """Initialize runtime state used during inference and display."""
         self.show_debug_window = True
-        self.model_tensor = torch.empty((1, 3, self.FOV_HEIGHT, self.FOV_WIDTH), dtype=torch.float16, device="cuda")
+
+        self.model_tensor = torch.empty(
+            (1, 3, self.FOV_HEIGHT, self.FOV_WIDTH),
+            dtype=torch.float16,
+            device="cuda"
+        )
+
         self.best_target_position = (0, 0)
+
+        # ============================================================================
+        # CENTER DETECTION SETTINGS
+        # ============================================================================
+        #
+        # If the detected target offset is inside this box around the screen center,
+        # the worker sends is_centered = True.
+        #
+        # Example:
+        # offset_x = 10, offset_y = -8 -> centered
+        # offset_x = 40, offset_y = 5  -> not centered
+
+        self.center_threshold_x = 12
+        self.center_threshold_y = 12
+
+        # Existing recoil-related settings
         self.shoot_threshold = 2
         self.recoil_strength = 5
         self.recoil_control = False
+
+        # Class IDs
         self.head_class_id = [1, 7]
         self.body_class_id = [0, 6]
 
     def capture_and_preprocess_frame(self):
         """Grab a frame from the camera and copy it into the model tensor."""
         dl_tensor = self.camera.grab_gpu_tensor()
+
         if dl_tensor is not None:
             if self.show_debug_window:
-                self.debug_frame = dl_tensor.cpu().numpy() 
-            self.model_tensor[0, 0].copy_(dl_tensor[:, :, 2]) # R
-            self.model_tensor[0, 1].copy_(dl_tensor[:, :, 1]) # G
-            self.model_tensor[0, 2].copy_(dl_tensor[:, :, 0]) # B
+                self.debug_frame = dl_tensor.cpu().numpy()
+
+            self.model_tensor[0, 0].copy_(dl_tensor[:, :, 2])  # R
+            self.model_tensor[0, 1].copy_(dl_tensor[:, :, 1])  # G
+            self.model_tensor[0, 2].copy_(dl_tensor[:, :, 0])  # B
             self.model_tensor.div_(255.0)
+
             return True
+
         return False
 
     def recoil_compensation(self, offset_x, offset_y):
@@ -92,12 +129,13 @@ class AimBot:
         if self.recoil_control:
             if abs(offset_x) < self.shoot_threshold and abs(offset_y) < self.shoot_threshold:
                 offset_y += self.recoil_strength
+
         return offset_x, offset_y
-    
+
     def update_recoil_state(self, boxes_data_tensor):
         """
         Check if the current detections include the rifle class to determine if recoil control should be active.
-            
+
         Args:
             boxes_data_tensor: Tensor of detections in xyxy format with class ids.
         """
@@ -106,6 +144,7 @@ class AimBot:
 
         cls = boxes_data_tensor[:, 5]
         rifle_class_id = 3
+
         return (cls == rifle_class_id).any().item()
 
     def calculate_best_target_position(self, boxes_data_tensor):
@@ -119,34 +158,81 @@ class AimBot:
             A tuple of offsets from screen center, or (None, None) when no valid target exists.
         """
         if boxes_data_tensor is None or boxes_data_tensor.shape[0] == 0:
-            print(f"<AIMBOT_TARGET> No boxes data", flush=True)
+            print("<AIMBOT_TARGET> No boxes data", flush=True)
             return None, None
 
         cls = boxes_data_tensor[:, 5]
-        valid_classes = torch.tensor(self.head_class_id + self.body_class_id, device=boxes_data_tensor.device)
+
+        valid_classes = torch.tensor(
+            self.head_class_id + self.body_class_id,
+            device=boxes_data_tensor.device
+        )
+
         mask = torch.isin(cls, valid_classes)
         valid_boxes = boxes_data_tensor[mask]
 
-        print(f"<AIMBOT_TARGET> Total detections: {len(cls)}, Valid boxes (head/body): {len(valid_boxes)}", flush=True)
-        print(f"<AIMBOT_TARGET> head_class_id: {self.head_class_id}, body_class_id: {self.body_class_id}", flush=True)
+        print(
+            f"<AIMBOT_TARGET> Total detections: {len(cls)}, "
+            f"Valid boxes (head/body): {len(valid_boxes)}",
+            flush=True
+        )
+
+        print(
+            f"<AIMBOT_TARGET> head_class_id: {self.head_class_id}, "
+            f"body_class_id: {self.body_class_id}",
+            flush=True
+        )
 
         if valid_boxes.shape[0] == 0:
-            print(f"<AIMBOT_TARGET> No valid target classes found", flush=True)
+            print("<AIMBOT_TARGET> No valid target classes found", flush=True)
             return None, None
 
         centers_x = (valid_boxes[:, 0] + valid_boxes[:, 2]) / 2.0
         centers_y = (valid_boxes[:, 1] + valid_boxes[:, 3]) / 2.0
+
         offsets_x = centers_x - (self.FOV_WIDTH / 2.0)
         offsets_y = centers_y - (self.FOV_HEIGHT / 2.0)
+
         distances_sq = (offsets_x ** 2) + (offsets_y ** 2)
         best_idx = torch.argmin(distances_sq)
 
         offset_x = int(round(offsets_x[best_idx].item()))
         offset_y = int(round(offsets_y[best_idx].item()))
 
-        print(f"<AIMBOT_TARGET> Best target offset: x={offset_x}, y={offset_y}", flush=True)
+        print(
+            f"<AIMBOT_TARGET> Best target offset: x={offset_x}, y={offset_y}",
+            flush=True
+        )
 
         return self.recoil_compensation(offset_x, offset_y)
+
+    def is_target_centered(self, offset_x, offset_y):
+        """
+        Check whether the selected target is close enough to the screen center.
+
+        Args:
+            offset_x: Horizontal offset from screen center.
+            offset_y: Vertical offset from screen center.
+
+        Returns:
+            True if target is inside the center threshold, otherwise False.
+        """
+        if offset_x == "-" or offset_y == "-":
+            return False
+
+        if offset_x is None or offset_y is None:
+            return False
+
+        try:
+            offset_x = int(offset_x)
+            offset_y = int(offset_y)
+        except (TypeError, ValueError):
+            return False
+
+        return (
+            abs(offset_x) <= self.center_threshold_x and
+            abs(offset_y) <= self.center_threshold_y
+        )
 
     def display_results(self, boxes_data):
         """Render debug overlays for the current frame when enabled."""
@@ -154,37 +240,72 @@ class AimBot:
             if boxes_data is not None and len(boxes_data) > 0:
                 xyxy = boxes_data[:, :4]
                 cls = boxes_data[:, 5]
+
                 valid_classes = self.head_class_id + self.body_class_id
                 valid_targets_mask = np.isin(cls, valid_classes)
+
                 valid_boxes = xyxy[valid_targets_mask]
                 valid_cls = cls[valid_targets_mask]
-                
+
                 for i, box in enumerate(valid_boxes):
                     x1, y1, x2, y2 = map(int, box)
                     class_id = valid_cls[i]
+
                     if class_id in self.head_class_id:
                         color = (255, 0, 255, 255)
                     else:
                         color = (0, 255, 0, 255)
-                    cv2.rectangle(self.debug_frame, (x1, y1), (x2, y2), color, 2)
+
+                    cv2.rectangle(
+                        self.debug_frame,
+                        (x1, y1),
+                        (x2, y2),
+                        color,
+                        2
+                    )
 
             offset_x, offset_y = self.best_target_position
+
             if offset_x != "-" and offset_y != "-":
                 center_x = int(self.FOV_WIDTH / 2.0)
                 center_y = int(self.FOV_HEIGHT / 2.0)
 
                 target_x = int(center_x + offset_x)
                 target_y = int(center_y + offset_y)
-                cv2.line(self.debug_frame, (center_x, center_y), (target_x, target_y), (0, 0, 255, 255), 2)
-                info_text = f"X: {float(offset_x):.1f}px | Y: {float(offset_y):.1f}px"
-                cv2.putText(self.debug_frame, info_text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 255, 255), 2)
-            
+
+                is_centered = self.is_target_centered(offset_x, offset_y)
+
+                cv2.line(
+                    self.debug_frame,
+                    (center_x, center_y),
+                    (target_x, target_y),
+                    (0, 0, 255, 255),
+                    2
+                )
+
+                info_text = (
+                    f"X: {float(offset_x):.1f}px | "
+                    f"Y: {float(offset_y):.1f}px | "
+                    f"CENTERED: {is_centered}"
+                )
+
+                cv2.putText(
+                    self.debug_frame,
+                    info_text,
+                    (20, 40),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    1.0,
+                    (0, 255, 255, 255),
+                    2
+                )
+
             cv2.imshow("Aimbot Vision (Debug)", self.debug_frame)
             cv2.waitKey(1)
+
         else:
             if cv2.getWindowProperty("Aimbot Vision (Debug)", cv2.WND_PROP_VISIBLE) >= 1:
                 cv2.destroyWindow("Aimbot Vision (Debug)")
-    
+
     def process_single_frame(self):
         """Run one full capture, inference, and display cycle."""
         if not self.capture_and_preprocess_frame():
@@ -196,20 +317,30 @@ class AimBot:
         if results[0].boxes is not None and len(results[0].boxes) > 0:
             result_tensor = results[0].boxes.data
             num_detections = len(results[0].boxes)
+
             print(f"<AIMBOT_FRAME> Detections found: {num_detections}", flush=True)
 
             self.recoil_control = self.update_recoil_state(result_tensor)
+
             result = self.calculate_best_target_position(result_tensor)
+
             self.best_target_position = result if result[0] is not None else ("-", "-")
-            print(f"<AIMBOT_FRAME> best_target_position calculated: {self.best_target_position}", flush=True)
+
+            print(
+                f"<AIMBOT_FRAME> best_target_position calculated: {self.best_target_position}",
+                flush=True
+            )
 
             if self.show_debug_window:
                 cpu_numpy_data = result_tensor.cpu().numpy()
                 self.display_results(cpu_numpy_data)
+
         else:
             self.recoil_control = False
             self.best_target_position = ("-", "-")
-            print(f"<AIMBOT_FRAME> No detections", flush=True)
+
+            print("<AIMBOT_FRAME> No detections", flush=True)
+
             if self.show_debug_window:
                 self.display_results(None)
 
@@ -239,48 +370,73 @@ def vision_worker(pipe_conn, model_path, target_fps):
         while True:
             if pipe_conn.poll():
                 msg = pipe_conn.recv()
+
                 if msg["cmd"] == "START":
                     is_running = True
+
                 elif msg["cmd"] == "STOP":
                     is_running = False
                     cv2.destroyAllWindows()
+
                 elif msg["cmd"] == "DEBUG":
                     aimbot.show_debug_window = msg["value"]
+
                     if not msg["value"]:
                         cv2.destroyAllWindows()
+
                 elif msg["cmd"] == "SET_TARGET":
                     if msg["value"] == "TT":
                         aimbot.head_class_id = [7]
                         aimbot.body_class_id = [6]
+
                     elif msg["value"] == "CT":
                         aimbot.head_class_id = [1]
                         aimbot.body_class_id = [0]
+
                     elif msg["value"] == "ALL":
                         aimbot.head_class_id = [1, 7]
                         aimbot.body_class_id = [0, 6]
+
                 elif msg["cmd"] == "QUIT":
                     break
 
             if is_running:
+                start_time = time.perf_counter()
+
                 try:
+                    aimbot.process_single_frame()
+
                     offset_x = aimbot.best_target_position[0]
                     offset_y = aimbot.best_target_position[1]
-                    # DEBUG: Print data being sent
-                    print(f"<AIMBOT_SEND> best_target_position: x={offset_x}, y={offset_y}", flush=True)
-                    pipe_conn.send(
-                        {"type": "offsets", "x": offset_x, "y": offset_y})
+
+                    is_centered = aimbot.is_target_centered(offset_x, offset_y)
+
+                    print(
+                        f"<AIMBOT_SEND> x={offset_x}, y={offset_y}, "
+                        f"is_centered={is_centered}",
+                        flush=True
+                    )
+
+                    pipe_conn.send({
+                        "type": "offsets",
+                        "x": offset_x,
+                        "y": offset_y,
+                        "is_centered": is_centered
+                    })
+
                 except Exception as e:
-                    print(e)
-                    pass
-                start_time = time.perf_counter()
-                aimbot.process_single_frame()
+                    print(e, flush=True)
+
                 elapsed_time = time.perf_counter() - start_time
+
                 if elapsed_time < target_frame_time:
                     time.sleep(target_frame_time - elapsed_time)
+
             else:
                 time.sleep(0.05)
-                
+
     except KeyboardInterrupt:
         pass
+
     finally:
         aimbot.cleanup()
