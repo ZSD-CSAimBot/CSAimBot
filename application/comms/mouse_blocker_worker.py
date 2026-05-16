@@ -33,6 +33,7 @@ def _run_windows_blocker(stop_event):
 
 def _run_linux_blocker(stop_event):
     import evdev
+    import select
 
     devices = [evdev.InputDevice(p) for p in evdev.list_devices()]
     mouse_dev = None
@@ -61,10 +62,11 @@ def _run_linux_blocker(stop_event):
         name="Robot_Filtered_Mouse",
     )
 
-    mouse_dev.set_nonblocking(True)
     try:
         while not stop_event.is_set():
-            try:
+            r, _, _ = select.select([mouse_dev.fd], [], [], 0.1)
+            
+            if r:
                 for event in mouse_dev.read():
                     if event.type == evdev.ecodes.EV_REL and event.code in (
                         evdev.ecodes.REL_X,
@@ -78,9 +80,6 @@ def _run_linux_blocker(stop_event):
                         virtual_mouse.write_event(event)
                     elif event.type == evdev.ecodes.EV_SYN:
                         virtual_mouse.write_event(event)
-            except BlockingIOError:
-                pass
-            time.sleep(0.01)
     finally:
         mouse_dev.ungrab()
         virtual_mouse.close()
