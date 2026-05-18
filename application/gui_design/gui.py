@@ -1860,7 +1860,7 @@ class GUI:
                             txt = dpg.add_text(
                                 item_config["label"], show=False, tag=text_tag
                             )
-                            dpg.bind_item_theme(txt, self.gray_text_theme)
+                            dpg.bind_item_theme(txt, self.gold_text_theme)
 
                             with dpg.item_handler_registry() as text_click_handler:
                                 dpg.add_item_clicked_handler(
