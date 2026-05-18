@@ -31,10 +31,14 @@ $dockerInstalled = ($LASTEXITCODE -eq 0)
 
 if (-not $dockerInstalled) {
     Write-Host "ERROR: Docker not found in Ubuntu. Starting installation..." -ForegroundColor Cyan
-    wsl.exe -d Ubuntu -- bash -c "sudo apt-get update"
-    wsl.exe -d Ubuntu -- bash -c "curl -fsSL https://get.docker.com -o get-docker.sh"
-    wsl.exe -d Ubuntu -- bash -c "sudo sh get-docker.sh"
-    wsl.exe -d Ubuntu -- bash -c "sudo usermod -aG docker `$USER"
+    
+    $wslUser = wsl.exe -d Ubuntu -- bash -c "echo `$USER"
+    $wslUser = $wslUser.Trim()
+
+    wsl.exe -d Ubuntu -u root -- bash -c "apt-get update"
+    wsl.exe -d Ubuntu -u root -- bash -c "curl -fsSL https://get.docker.com -o get-docker.sh"
+    wsl.exe -d Ubuntu -u root -- bash -c "sh get-docker.sh"
+    wsl.exe -d Ubuntu -u root -- bash -c "usermod -aG docker $wslUser"
     
     Write-Host "Docker has been successfully installed!" -ForegroundColor Green
 } else {
@@ -50,12 +54,12 @@ $nvidiaCtkInstalled = ($LASTEXITCODE -eq 0)
 if (-not $nvidiaCtkInstalled) {
     Write-Host "ERROR: NVIDIA Container Toolkit not found in Ubuntu. Starting installation..." -ForegroundColor Cyan
 
-    wsl.exe -d Ubuntu -- bash -c "curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg --yes"
-    wsl.exe -d Ubuntu -- bash -c "curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list"
-    wsl.exe -d Ubuntu -- bash -c "sudo apt-get update"
-    wsl.exe -d Ubuntu -- bash -c "sudo apt-get install -y nvidia-container-toolkit"
-    wsl.exe -d Ubuntu -- bash -c "sudo nvidia-ctk runtime configure --runtime=docker"
-    wsl.exe -d Ubuntu -- bash -c "sudo service docker restart"
+    wsl.exe -d Ubuntu -u root -- bash -c "curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg --yes"
+    wsl.exe -d Ubuntu -u root -- bash -c "curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | tee /etc/apt/sources.list.d/nvidia-container-toolkit.list"
+    wsl.exe -d Ubuntu -u root -- bash -c "apt-get update"
+    wsl.exe -d Ubuntu -u root -- bash -c "apt-get install -y nvidia-container-toolkit"
+    wsl.exe -d Ubuntu -u root -- bash -c "nvidia-ctk runtime configure --runtime=docker"
+    wsl.exe -d Ubuntu -u root -- bash -c "service docker restart"
     
     Write-Host "NVIDIA Container Toolkit has been successfully installed and configured!" -ForegroundColor Green
 } else {
