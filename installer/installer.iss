@@ -15,7 +15,7 @@ PrivilegesRequired=admin
 [Files]
 Source: "env_setup.ps1"; DestDir: "{tmp}"; Flags: dontcopy
 Source: "dist\CsAimBot\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\application\simulation\gazebo_sim.tar"; DestDir: "{app}\_internal\application\simulation"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "..\application\simulation\gazebo_sim.tar"; DestDir: "{tmp}"; Flags: ignoreversion skipifsourcedoesntexist deleteafterinstall
 
 [Icons]
 Name: "{group}\CsAimBot"; Filename: "{app}\CsAimBot.exe"
@@ -23,7 +23,7 @@ Name: "{commondesktop}\CsAimBot"; Filename: "{app}\CsAimBot.exe"
 
 [Run]
 Filename: "{app}\CsAimBot.exe"; Parameters: "--export-only"; StatusMsg: "Eksportowanie modelu YOLO do formatu TensorRT (moze to potrwac kilka minut)..."; Flags: waituntilterminated
-Filename: "wsl.exe"; Parameters: "-d Ubuntu -e bash -c ""docker load -i $(wslpath '{tmp}\gazebo_sim.tar')"""; StatusMsg: "Wczytywanie obrazu Gazebo do Dockera na WSL..."; Flags: waituntilterminated skipifdoesntexist
+Filename: "wsl.exe"; Parameters: "-d Ubuntu -e bash -c ""docker load -i \""$(wslpath '{tmp}\gazebo_sim.tar')\"""""; StatusMsg: "Wczytywanie obrazu Gazebo do Dockera na WSL..."; Flags: waituntilterminated skipifdoesntexist
 
 [Code]
 procedure InitializeWizard;
