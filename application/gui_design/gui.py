@@ -50,8 +50,6 @@ class GUI:
 
         # Vision target offsets from aimbot.py.
         # These must NOT be mixed with manual jog coordinates.
-        self.target_offset_x = 0
-        self.target_offset_y = 0
         self.manual_keys = ""
         self.current_speed = 75
         # PID Controller variables for visual servoing
@@ -2113,17 +2111,30 @@ class GUI:
     def poll_pipe(self):
         """Process messages from the worker processes.
 
-        Important protocol rule:
-        - Vision offsets from aimbot.py are stored in target_offset_x/y.
-        - Manual keys are sent with 0,0 offset so old AI offsets cannot mix with jog commands.
-        - If no manual key is active, each valid vision offset is forwarded to ESP32 as AIM input.
+        Protocol:
+        ESP receives:
+        target_offset_x,target_offset_y,sniper,keys_to_send,current_speed
+
+        Logic:
+        - manual keyboard works always
+        - vision has priority only when it has a real target offset
+        - when vision is active, manual XY is blocked by sending keys="-"
+        - when vision has no target, manual keys are sent normally
         """
-        last_vision_send = 0
+
+        last_send_time = 0.0
+        last_sent_command = None
+
+        target_offset_x = 0
+        target_offset_y = 0
+        sniper = 0
+        vision_has_target = False
 
         while self.running:
-            # =================================================================
-            # 1. VISION PIPE - Drain and send the latest YOLO data
-            # =================================================================
+            # =============================================================
+            # 1. VISION PIPE
+            # =============================================================
+
             latest_vision_msg = None
 
             while self.pipe.poll():
@@ -2134,172 +2145,183 @@ class GUI:
             if latest_vision_msg:
                 x_val = latest_vision_msg.get("x")
                 y_val = latest_vision_msg.get("y")
-
-                force_update = False
+                sniper = 1 if latest_vision_msg.get("sniper") else 0
 
                 if x_val is None or y_val is None or x_val == "-" or y_val == "-":
-                    if self.target_offset_x != 0 or self.target_offset_y != 0:
-                        force_update = True
-                    self.target_offset_x = 0
-                    self.target_offset_y = 0
+                    target_offset_x = 0
+                    target_offset_y = 0
+                    vision_has_target = False
                 else:
                     try:
-                        self.target_offset_x = int(x_val)
-                        self.target_offset_y = -int(y_val)
+                        target_offset_x = int(x_val)
+                        target_offset_y = -int(y_val)
+                        vision_has_target = (target_offset_x != 0 or target_offset_y != 0)
+
                     except (TypeError, ValueError):
-                        self.target_offset_x = 0
-                        self.target_offset_y = 0
+                        target_offset_x = 0
+                        target_offset_y = 0
+                        vision_has_target = False
 
-                now = time.time()
-                if self.is_connected and not self.manual_keys:
-                    if force_update or (now - last_vision_send > 0.05):
+            # =============================================================
+            # 2. COMMS PIPE
+            # =============================================================
 
-                        dist = math.hypot(self.target_offset_x, self.target_offset_y)
-
-                        # =====================================================
-                        # NON-LINEAR PROPORTIONAL CONTROLLER (Aggressive brake)
-                        # =====================================================
-                        slowdown_radius = (
-                            350.0  # Pixels distance to start hitting the brakes
-                        )
-
-                        if dist > slowdown_radius:
-                            dyn_speed = self.current_speed
-                        else:
-                            # Exponential deceleration using a power of 1.5
-                            # The closer the bot gets, the harder it brakes
-                            scale = (dist / slowdown_radius) ** 1.5
-                            dyn_speed = int(2 + (self.current_speed - 2) * scale)
-
-                        # Safety clamp
-                        dyn_speed = max(2, min(dyn_speed, self.current_speed))
-
-                        # Hard stop if within ESP32 deadzone
-                        if dist <= 15:
-                            dyn_speed = 0
-
-                        # DEBUG: Print real-time dynamic speed to the console
-                        if dist > 0:
-                            print(
-                                f"<AIMBOT> Dist: {dist:.0f}px | Speed sent: {dyn_speed}%",
-                                flush=True,
-                            )
-
-                        self.comms_pipe.send(
-                            {
-                                "cmd": "SEND",
-                                "value": f"{self.target_offset_x},{self.target_offset_y},{dyn_speed},",
-                            }
-                        )
-                        last_vision_send = now
-
-            # =================================================================
-            # 2. COMMS PIPE - Receive logs from ESP32 and physical keyboard
-            # =================================================================
             while self.comms_pipe.poll():
                 msg = self.comms_pipe.recv()
+
                 if msg.get("type") == "connection_status":
                     self.connection_state = msg.get("status")
                     self.is_connected = self.connection_state == "connected"
                     self.update_connection_display()
+
                 elif msg.get("type") == "keyboard":
                     keys = msg.get("keys") or ""
                     self.manual_keys = keys
 
-                    if self.is_connected:
-                        if keys:
-                            self.comms_pipe.send(
-                                {
-                                    "cmd": "SEND",
-                                    "value": f"0,0,{self.current_speed},{keys}",
-                                }
-                            )
-                        else:
-                            self.comms_pipe.send(
-                                {
-                                    "cmd": "SEND",
-                                    "value": f"{self.target_offset_x},{self.target_offset_y},{self.current_speed},",
-                                }
-                            )
-
                     display_text = f"[ {keys.upper()} ]" if keys else "[ BRAK ]"
                     if dpg.does_item_exist("current_keys_text"):
                         dpg.set_value("current_keys_text", display_text)
+
                 elif msg.get("type") == "esp_msg":
                     esp_text = msg.get("value")
                     print(f"<ESP32> {esp_text}", flush=True)
-                    # PARSING LOGIC: Extract X and Y values from the ESP32 status string
-                    # Example format: "E1: 100 | E2: 200 | X: 12.34 | Y: 5.67 | ..."
+
                     try:
                         if "X:" in esp_text and "Y:" in esp_text:
                             parts = esp_text.split("|")
+
                             for part in parts:
                                 part = part.strip()
+
                                 if part.startswith("X:"):
-                                    # Extract number after "X: "
                                     self.pos_x = float(part.split(":")[1].strip())
+
                                 elif part.startswith("Y:"):
-                                    # Extract number after "Y: "
                                     self.pos_y = float(part.split(":")[1].strip())
 
-                            # Push the newly parsed physical coordinates to the UI
+                                elif part.startswith("Z:"):
+                                    self.pos_z = float(part.split(":")[1].strip())
+
                             self._update_coords_display()
-                    except (ValueError, IndexError) as e:
-                        # Silently ignore parsing errors from incomplete serial strings
+
+                    except (ValueError, IndexError, AttributeError):
                         pass
+
                 elif msg.get("type") == "stat_update":
                     key, value = msg.get("key"), msg.get("value")
+
                     if key and value is not None:
                         self.stats_manager.set(key, value)
                         tag = f"stat_val_{key}"
+
                         if dpg.does_item_exist(tag):
                             dpg.configure_item(
-                                tag, label=StatsManager.format_value(key, value)
+                                tag,
+                                label=StatsManager.format_value(key, value)
                             )
+
                 elif msg.get("type") == "stat_increment":
                     key = msg.get("key")
                     amount = msg.get("amount", 1)
+
                     if key:
                         self.stats_manager.increment(key, amount)
                         tag = f"stat_val_{key}"
+
                         if dpg.does_item_exist(tag):
                             dpg.configure_item(
                                 tag,
                                 label=StatsManager.format_value(
-                                    key, self.stats_manager.get(key)
+                                    key,
+                                    self.stats_manager.get(key)
                                 ),
                             )
 
-            # =================================================================
-            # 3. SIM PIPE - Receive side simulation status
-            # =================================================================
+            # =============================================================
+            # 3. SEND COMMAND TO ESP32
+            # =============================================================
+            # To jest najważniejsza zmiana:
+            # wysyłamy komendę niezależnie od tego, czy przyszła ramka vision.
+            # Dzięki temu manual działa zawsze.
+            target_detected = 0
+            if self.is_connected:
+                now = time.time()
+
+                # Vision priority:
+                # Jeżeli vision ma aktywny cel, ESP dostaje offset i keys="-".
+                # Jeżeli vision nie ma celu, ESP dostaje manual keys.
+                if vision_has_target:
+                    target_detected = 1 if vision_has_target else 0
+                    keys_to_send = "-"
+                    send_x = target_offset_x
+                    send_y = target_offset_y
+                else:
+                    keys_to_send = self.manual_keys if self.manual_keys else "-"
+                    send_x = 0
+                    send_y = 0
+                    sniper = 0
+
+                command = f"{send_x},{send_y},{sniper},{keys_to_send},{self.current_speed},{target_detected}"
+
+                # Wysyłamy gdy komenda się zmieniła albo cyklicznie co 20 ms.
+                # Dzięki temu manual jest responsywny, ale nie zalewasz seriala bez sensu.
+                if command != last_sent_command or (now - last_send_time) >= 0.02:
+                    self.comms_pipe.send(
+                        {
+                            "cmd": "SEND",
+                            "value": command
+                        }
+                    )
+
+                    last_sent_command = command
+                    last_send_time = now
+
+                    if vision_has_target or self.manual_keys:
+                        dist = math.hypot(send_x, send_y)
+                        print(
+                            f"<GUI_SEND> {command} | dist={dist:.0f}px | vision={vision_has_target}",
+                            flush=True
+                        )
+
+            # =============================================================
+            # 4. SIM PIPE
+            # =============================================================
+
             while self.sim_pipe.poll():
                 msg = self.sim_pipe.recv()
+
                 if msg.get("type") == "simulation_status":
                     self.simulation_state = msg.get("status", "stopped")
                     message = msg.get("message")
+
                     if message:
                         color = (
                             [80, 255, 80]
                             if self.simulation_state == "running"
                             else [255, 255, 80]
                         )
+
                         if "error" in message.lower() or "not found" in message.lower():
                             color = [255, 80, 80]
+
                         self.add_log(message, color)
+
                         if hasattr(self, "txt_sim_status") and dpg.does_item_exist(
-                            self.txt_sim_status
+                                self.txt_sim_status
                         ):
                             dpg.set_value(self.txt_sim_status, f"Simulation: {message}")
                             dpg.configure_item(self.txt_sim_status, color=color)
+
                     self.update_simulation_display()
+
                 elif msg.get("type") == "sim_position_updated":
                     if hasattr(self, "txt_sim_pos") and dpg.does_item_exist(
-                        self.txt_sim_pos
+                            self.txt_sim_pos
                     ):
                         x, y = msg.get("x", 0.0), msg.get("y", 0.0)
                         dpg.set_value(
-                            self.txt_sim_pos, f"Current position: X={x:.4f}, Y={y:.4f}"
+                            self.txt_sim_pos,
+                            f"Current position: X={x:.4f}, Y={y:.4f}"
                         )
 
             time.sleep(0.01)
