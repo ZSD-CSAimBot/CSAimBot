@@ -158,24 +158,30 @@ float visionTargetY = 0.0;
 
 // Kalibracja: ile cm ruchu myszy odpowiada 1 pikselowi błędu na ekranie.
 // To trzeba dobrać testowo.
-float pxToCmX = 0.006;
-float pxToCmY = 0.006;
+float pxToCmX = 0.0021167;
+float pxToCmY = 0.0021167;
 
 // Na start robimy P, bez I i bez D.
 // Jak będzie stabilne, można dodać delikatne D.
-float kpVision = 60.0;
-float kdVision = 0.0;
+float kpVision = 80.0;
+float kdVision = 3.0;
 
 float prevVisionErrorX = 0.0;
 float prevVisionErrorY = 0.0;
 unsigned long lastVisionPidMicros = 0;
 
+float filteredOffsetX = 0.0;
+float filteredOffsetY = 0.0;
+const float VISION_FILTER_ALPHA = 0.35;
+
 // Martwa strefa w pikselach — jak cel jest blisko środka, robot stoi.
-const int VISION_DEADZONE_PX_X = 12;
-const int VISION_DEADZONE_PX_Y = 12;
+const int VISION_DEADZONE_PX_X = 7;
+const int VISION_DEADZONE_PX_Y = 7;
 
 // Martwa strefa pozycji w cm dla enkoderów.
-const float VISION_TARGET_TOLERANCE_CM = 0.08;
+const float VISION_TARGET_TOLERANCE_CM = 0.01;
+
+
 
 // ============================================================================
 // VISION CENTERED EVENT SETTINGS
@@ -989,6 +995,11 @@ void applyVisionPControl() {
 
   if (isVisionCenteredNow) {
     stopAllMotors();
+    prevVisionErrorX = 0.0;
+    prevVisionErrorY = 0.0;
+    lastVisionPidMicros = 0;
+    filteredOffsetX = 0.0;
+    filteredOffsetY = 0.0;
 
     unsigned long nowMs = millis();
 
@@ -1021,8 +1032,11 @@ void applyVisionPControl() {
   //
   // Jeśli GUI już odwraca Y, wtedy znak przy Y trzeba będzie zmienić.
 
-  visionTargetX = currentPosX - ((float)targetOffsetPxX * pxToCmX);
-  visionTargetY = currentPosY - ((float)targetOffsetPxY * pxToCmY);
+  filteredOffsetX = filteredOffsetX + VISION_FILTER_ALPHA * ((float)targetOffsetPxX - filteredOffsetX);
+  filteredOffsetY = filteredOffsetY + VISION_FILTER_ALPHA * ((float)targetOffsetPxY - filteredOffsetY);
+
+  visionTargetX = currentPosX - (filteredOffsetX * pxToCmX);
+  visionTargetY = currentPosY - (filteredOffsetY * pxToCmY);
 
   // Ogranicz target do obszaru roboczego, żeby PID nie próbował wyjechać poza ramę.
   if (visionTargetX < LIMIT_MIN_X + LIMIT_MARGIN_CM) visionTargetX = LIMIT_MIN_X + LIMIT_MARGIN_CM;
@@ -1055,6 +1069,14 @@ void applyVisionPControl() {
 
   float derivativeX = (errorX - prevVisionErrorX) / dt;
   float derivativeY = (errorY - prevVisionErrorY) / dt;
+
+  const float MAX_DERIVATIVE = 2.0;
+
+  if (derivativeX > MAX_DERIVATIVE) derivativeX = MAX_DERIVATIVE;
+  if (derivativeX < -MAX_DERIVATIVE) derivativeX = -MAX_DERIVATIVE;
+
+  if (derivativeY > MAX_DERIVATIVE) derivativeY = MAX_DERIVATIVE;
+  if (derivativeY < -MAX_DERIVATIVE) derivativeY = -MAX_DERIVATIVE;
 
   float outputX = kpVision * errorX + kdVision * derivativeX;
   float outputY = kpVision * errorY + kdVision * derivativeY;
@@ -1094,7 +1116,7 @@ void applyVisionPControl() {
   int pidSpeed = (int)magnitude;
 
   if (pidSpeed > maxSpeedValue) pidSpeed = maxSpeedValue;
-  if (pidSpeed < 8) pidSpeed = 8;
+  if (pidSpeed < 4) pidSpeed = 3;
 
   if (maxSpeedValue <= 0 || pidSpeed <= 0) {
     stopAllMotors();
