@@ -1,26 +1,13 @@
-import os
 from ultralytics import YOLO
 
 
-def export_model_to_trt():
+def export_model_to_trt(path):
     """
     This function loads the trained YOLO model from the specified path and exports it as a TensorRT engine.
      - The exported engine will be saved in the same directory as the trained model with the name 'best.engine'.
      - The export process includes optimizations such as half-precision (FP16) and static input size for improved performance on NVIDIA GPUs.
     """
     print("Exporting YOLO model to TensorRT format...")
-    # Get the directory where this script is located
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    model_path = os.path.join(script_dir, 'trained_model.pt')
-    if not os.path.exists(model_path):
-        raise FileNotFoundError(f"Model file not found at {model_path}")
-
-    model = YOLO(model_path)
-    model.export(
-        format="engine",
-        imgsz=[736, 1280], 
-        half=True,
-        dynamic=False, 
-        device=0
-    )
+    model = YOLO(path)
+    model.export(format="engine", imgsz=[736, 1280], half=True, dynamic=False, device=0)
     print("Model exported successfully to TensorRT format.")

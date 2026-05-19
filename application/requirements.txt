@@ -15,8 +15,6 @@ dearpygui==2.2
 numpy==2.4.4
 pyserial==3.5
 roslibpy==2.0.0
-PyQt6==6.11.0
-pytest==9.0.3
 pynput==1.8.1
 2==0.8.1
 
@@ -24,3 +22,4 @@ bettercam==1.0.0; sys_platform == 'win32'
 cupy-cuda12x==13.6.0; sys_platform == 'win32'
 
 mss==10.1.0; sys_platform == 'linux' # nvfbc-python does not have a PyPI package, so we will need to install it manually on Linux. For now, we can use mss as a placeholder for screen capture on Linux.
+evdev==1.9.3; sys_platform == 'linux' # evdev is used for keyboard input on Linux. On Windows, we will use pynput instead.
