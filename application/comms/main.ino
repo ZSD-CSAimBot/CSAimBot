@@ -40,6 +40,7 @@ const int MAX_BUFFER_SIZE = 64;
 char serialBuffer[MAX_BUFFER_SIZE];
 int bufferIndex = 0;
 bool isCommandReady = false;
+int targetDetected = 0;
 
 // ============================================================================
 // CONFIGURATION & STATE VARIABLES
@@ -140,6 +141,68 @@ const unsigned long MAX_RECOVERY_TIME_MS = 12000;
 int posX = 0;
 int posY = 0;
 String pressedKeys = "";
+
+// ============================================================================
+// VISION PID / P CONTROL SETTINGS
+// ============================================================================
+
+int targetOffsetPxX = 0;
+int targetOffsetPxY = 0;
+int isHoldingSniper = 0;
+int maxSpeedValue = 75;
+
+bool visionControlActive = false;
+
+float visionTargetX = 0.0;
+float visionTargetY = 0.0;
+
+// Kalibracja: ile cm ruchu myszy odpowiada 1 pikselowi błędu na ekranie.
+// To trzeba dobrać testowo.
+float pxToCmX = 0.0021167;
+float pxToCmY = 0.0021167;
+
+// Na start robimy P, bez I i bez D.
+// Jak będzie stabilne, można dodać delikatne D.
+float kpVision = 80.0;
+float kdVision = 3.0;
+
+float prevVisionErrorX = 0.0;
+float prevVisionErrorY = 0.0;
+unsigned long lastVisionPidMicros = 0;
+
+float filteredOffsetX = 0.0;
+float filteredOffsetY = 0.0;
+const float VISION_FILTER_ALPHA = 0.35;
+
+// Martwa strefa w pikselach — jak cel jest blisko środka, robot stoi.
+const int VISION_DEADZONE_PX_X = 7;
+const int VISION_DEADZONE_PX_Y = 7;
+
+// Martwa strefa pozycji w cm dla enkoderów.
+const float VISION_TARGET_TOLERANCE_CM = 0.01;
+
+
+
+// ============================================================================
+// VISION CENTERED EVENT SETTINGS
+// ============================================================================
+
+bool wasVisionCentered = false;
+unsigned long lastVisionCenteredEventMs = 0;
+const unsigned long VISION_CENTERED_COOLDOWN_MS = 250;
+
+// ============================================================================
+// FIRE / RELAY1 RATE LIMIT
+// ============================================================================
+
+const unsigned long FIRE_HOLD_MS = 70;       // ile ms trzymać solenoid
+const unsigned long FIRE_GAP_MS = 300;       // minimalna przerwa między strzałami
+
+bool fireRequestActive = false;              // czy aktualnie chcemy strzelać
+bool fireOutputActive = false;               // czy RELAY1 jest teraz HIGH
+
+unsigned long fireStartMs = 0;
+unsigned long lastFireEndMs = 0;
 
 // ============================================================================
 // FORWARD DECLARATIONS
@@ -396,7 +459,7 @@ void autoLiftCenterAndRestoreZ(const char* reason) {
   zLift();
 
   // 2. Move XY to the center workspace position safely
-  moveToCenter(200);
+  moveToCenter(100);
 
   // 3. Drop the mouse back down to its working position
   zDrop();
@@ -846,6 +909,260 @@ void setup() {
   Serial.println("Send h command to perform homing.");
 }
 
+void applyCoreXYMovement(bool moveUp, bool moveDown, bool moveLeft, bool moveRight) {
+  isMovingUp = false;
+  isMovingDown = false;
+  isMovingLeft = false;
+  isMovingRight = false;
+
+  if (moveUp && moveLeft) {
+    setMotorsXY(false, LOW, true, LOW);
+    isMovingUp = true;
+    isMovingLeft = true;
+  }
+
+  else if (moveUp && moveRight) {
+    setMotorsXY(true, HIGH, false, LOW);
+    isMovingUp = true;
+    isMovingRight = true;
+  }
+
+  else if (moveDown && moveLeft) {
+    setMotorsXY(true, LOW, false, LOW);
+    isMovingDown = true;
+    isMovingLeft = true;
+  }
+
+  else if (moveDown && moveRight) {
+    setMotorsXY(false, LOW, true, HIGH);
+    isMovingDown = true;
+    isMovingRight = true;
+  }
+
+  else if (moveUp) {
+    setMotorsXY(true, HIGH, true, LOW);
+    isMovingUp = true;
+  }
+
+  else if (moveDown) {
+    setMotorsXY(true, LOW, true, HIGH);
+    isMovingDown = true;
+  }
+
+  else if (moveLeft) {
+    setMotorsXY(true, LOW, true, LOW);
+    isMovingLeft = true;
+  }
+
+  else if (moveRight) {
+    setMotorsXY(true, HIGH, true, HIGH);
+    isMovingRight = true;
+  }
+
+  else {
+    stopAllMotors();
+  }
+}
+
+void setDelayFromSpeedPercent(int speedPercent) {
+  if (maxSpeedValue <= 0 || speedPercent <= 0) {
+    stopAllMotors();
+    return;
+  }
+
+  if (speedPercent > maxSpeedValue) {
+    speedPercent = maxSpeedValue;
+  }
+
+  if (speedPercent < 1) {
+    speedPercent = 1;
+  }
+
+  if (speedPercent > 100) {
+    speedPercent = 100;
+  }
+
+  delayCoreXY = (int)(1000000.0 / (100.0 + ((speedPercent - 1.0) / 99.0) * 9900.0));
+}
+
+void applyVisionPControl() {
+  updateEncoderPosition();
+
+  // Jeżeli cel jest już blisko środka ekranu, zatrzymaj XY.
+  bool isVisionCenteredNow =
+  abs(targetOffsetPxX) <= VISION_DEADZONE_PX_X &&
+  abs(targetOffsetPxY) <= VISION_DEADZONE_PX_Y;
+
+  if (isVisionCenteredNow) {
+    stopAllMotors();
+    prevVisionErrorX = 0.0;
+    prevVisionErrorY = 0.0;
+    lastVisionPidMicros = 0;
+    filteredOffsetX = 0.0;
+    filteredOffsetY = 0.0;
+
+    unsigned long nowMs = millis();
+
+    if (!wasVisionCentered &&
+        nowMs - lastVisionCenteredEventMs >= VISION_CENTERED_COOLDOWN_MS) {
+
+      Serial.println("VISION CENTERED EVENT");
+
+      lastVisionCenteredEventMs = nowMs;
+    }
+
+    wasVisionCentered = true;
+    return;
+  }
+
+  wasVisionCentered = false;
+
+  // ========================================================================
+  // PIXELS -> ROBOT TARGET POSITION
+  // ========================================================================
+  //
+  // Założenie:
+  // ekran X dodatni = cel po prawej -> mysz musi iść w prawo.
+  // U Ciebie fizycznie ruch w prawo zmniejsza currentPosX,
+  // więc target X = current X - offsetX * skala.
+  //
+  // ekran Y dodatni = cel niżej -> mysz musi iść w dół.
+  // U Ciebie ruch w dół zwiększa currentPosY,
+  // więc target Y = current Y + offsetY * skala.
+  //
+  // Jeśli GUI już odwraca Y, wtedy znak przy Y trzeba będzie zmienić.
+
+  filteredOffsetX = filteredOffsetX + VISION_FILTER_ALPHA * ((float)targetOffsetPxX - filteredOffsetX);
+  filteredOffsetY = filteredOffsetY + VISION_FILTER_ALPHA * ((float)targetOffsetPxY - filteredOffsetY);
+
+  visionTargetX = currentPosX - (filteredOffsetX * pxToCmX);
+  visionTargetY = currentPosY - (filteredOffsetY * pxToCmY);
+
+  // Ogranicz target do obszaru roboczego, żeby PID nie próbował wyjechać poza ramę.
+  if (visionTargetX < LIMIT_MIN_X + LIMIT_MARGIN_CM) visionTargetX = LIMIT_MIN_X + LIMIT_MARGIN_CM;
+  if (visionTargetX > LIMIT_MAX_X - LIMIT_MARGIN_CM) visionTargetX = LIMIT_MAX_X - LIMIT_MARGIN_CM;
+
+  if (visionTargetY < LIMIT_MIN_Y + LIMIT_MARGIN_CM) visionTargetY = LIMIT_MIN_Y + LIMIT_MARGIN_CM;
+  if (visionTargetY > LIMIT_MAX_Y - LIMIT_MARGIN_CM) visionTargetY = LIMIT_MAX_Y - LIMIT_MARGIN_CM;
+
+  float errorX = visionTargetX - currentPosX;
+  float errorY = visionTargetY - currentPosY;
+
+  // Jeżeli fizycznie jesteśmy blisko pozycji docelowej, zatrzymaj.
+  if (abs(errorX) <= VISION_TARGET_TOLERANCE_CM &&
+      abs(errorY) <= VISION_TARGET_TOLERANCE_CM) {
+    stopAllMotors();
+    return;
+  }
+
+  // ========================================================================
+  // P / PD OUTPUT
+  // ========================================================================
+
+  unsigned long nowMicros = micros();
+  float dt = 0.001;
+
+  if (lastVisionPidMicros > 0) {
+    dt = (nowMicros - lastVisionPidMicros) / 1000000.0;
+    if (dt <= 0.0001) dt = 0.0001;
+  }
+
+  float derivativeX = (errorX - prevVisionErrorX) / dt;
+  float derivativeY = (errorY - prevVisionErrorY) / dt;
+
+  const float MAX_DERIVATIVE = 2.0;
+
+  if (derivativeX > MAX_DERIVATIVE) derivativeX = MAX_DERIVATIVE;
+  if (derivativeX < -MAX_DERIVATIVE) derivativeX = -MAX_DERIVATIVE;
+
+  if (derivativeY > MAX_DERIVATIVE) derivativeY = MAX_DERIVATIVE;
+  if (derivativeY < -MAX_DERIVATIVE) derivativeY = -MAX_DERIVATIVE;
+
+  float outputX = kpVision * errorX + kdVision * derivativeX;
+  float outputY = kpVision * errorY + kdVision * derivativeY;
+
+  prevVisionErrorX = errorX;
+  prevVisionErrorY = errorY;
+  lastVisionPidMicros = nowMicros;
+
+  // ========================================================================
+  // OUTPUT -> DIRECTION
+  // ========================================================================
+  //
+  // currentPosX większe = bardziej w lewo.
+  // Jeśli outputX dodatni, target jest bardziej w lewo -> moveLeft.
+  // Jeśli outputX ujemny, target jest bardziej w prawo -> moveRight.
+  //
+  // currentPosY większe = bardziej w dół.
+  // Jeśli outputY dodatni -> moveDown.
+  // Jeśli outputY ujemny -> moveUp.
+
+  float outputDeadband = 1.0;
+
+  bool moveLeft = outputX > outputDeadband;
+  bool moveRight = outputX < -outputDeadband;
+
+  bool moveDown = outputY > outputDeadband;
+  bool moveUp = outputY < -outputDeadband;
+
+  blockMoveIfWouldExceedLimit(moveUp, moveDown, moveLeft, moveRight);
+
+  // ========================================================================
+  // OUTPUT -> SPEED
+  // ========================================================================
+
+  float magnitude = sqrt((outputX * outputX) + (outputY * outputY));
+
+  int pidSpeed = (int)magnitude;
+
+  if (pidSpeed > maxSpeedValue) pidSpeed = maxSpeedValue;
+  if (pidSpeed < 4) pidSpeed = 3;
+
+  if (maxSpeedValue <= 0 || pidSpeed <= 0) {
+    stopAllMotors();
+    return;
+  }
+
+  setDelayFromSpeedPercent(pidSpeed);
+  applyCoreXYMovement(moveUp, moveDown, moveLeft, moveRight);
+}
+
+void updateFireControl() {
+  unsigned long nowMs = millis();
+
+  // 1. Jeżeli RELAY1 jest aktywny, wyłącz go po FIRE_HOLD_MS
+  if (fireOutputActive) {
+    if (nowMs - fireStartMs >= FIRE_HOLD_MS) {
+      digitalWrite(RELAY1_PIN, LOW);
+      fireOutputActive = false;
+      lastFireEndMs = nowMs;
+
+      Serial.println("FIRE END");
+    }
+
+    return;
+  }
+
+  // 2. Jeżeli nie ma żądania strzału, trzymamy LOW
+  if (!fireRequestActive) {
+    digitalWrite(RELAY1_PIN, LOW);
+    return;
+  }
+
+  // 3. Jeżeli jest żądanie strzału, ale cooldown jeszcze trwa, czekamy
+  if (lastFireEndMs != 0 && (nowMs - lastFireEndMs < FIRE_GAP_MS)) {
+    digitalWrite(RELAY1_PIN, LOW);
+    return;
+  }
+
+  // 4. Można strzelić
+  digitalWrite(RELAY1_PIN, HIGH);
+  fireOutputActive = true;
+  fireStartMs = nowMs;
+
+  Serial.println("FIRE START");
+}
+
 // ============================================================================
 // MAIN LOOP
 // ============================================================================
@@ -988,7 +1305,6 @@ void loop() {
   // ==========================================================================
   // 5. SERIAL COMMAND RECEIVING
   // ==========================================================================
-
   while (Serial.available() > 0 && !isCommandReady) {
     char incomingChar = Serial.read();
 
@@ -1013,32 +1329,37 @@ void loop() {
 
     if (data == "ESP32-CHECK") {
       Serial.println("ESP32-READY");
-
       isCommandReady = false;
       bufferIndex = 0;
-
-      return;
     }
-
-    if (data.length() > 0) {
-      int commaIndexOne = data.indexOf(',');
-      int commaIndexTwo = data.indexOf(',', commaIndexOne + 1);
-      int commaIndexThree = data.indexOf(',', commaIndexTwo + 1);
-
-      if (commaIndexOne > 0 && commaIndexTwo > 0 && commaIndexThree > 0) {
-        posX = data.substring(0, commaIndexOne).toInt();
-        posY = data.substring(commaIndexOne + 1, commaIndexTwo).toInt();
-
-        int speedValue = data.substring(commaIndexTwo + 1, commaIndexThree).toInt();
-
-        pressedKeys = data.substring(commaIndexThree + 1);
-
-        if (speedValue >= 1 && speedValue <= 100) {
-          delayCoreXY = (int)(1000000.0 / (100.0 + ((speedValue - 1.0) / 99.0) * 9900.0));
+    else if (data.length() > 0) {
+      int commaIndexes[5] = {0, 0, 0, 0, 0};
+      int commaIndex = 0;
+      for (int index = 0; index < data.length(); index++) {
+        if (data[index] == ',') {
+          if (commaIndex < 5) {
+            commaIndexes[commaIndex] = index;
+            commaIndex++;
+          }
         }
+      }
+      
+      if (commaIndex == 5) {
+        targetOffsetPxX = data.substring(0, commaIndexes[0]).toInt();
+        targetOffsetPxY = data.substring(commaIndexes[0] + 1, commaIndexes[1]).toInt();
+        isHoldingSniper = data.substring(commaIndexes[1] + 1, commaIndexes[2]).toInt();
+        pressedKeys = data.substring(commaIndexes[2] + 1, commaIndexes[3]);
+        maxSpeedValue = data.substring(commaIndexes[3] + 1, commaIndexes[4]).toInt();
+        targetDetected = data.substring(commaIndexes[4] + 1).toInt();
+
+        if (maxSpeedValue < 0) maxSpeedValue = 0;
+        if (maxSpeedValue > 100) maxSpeedValue = 100;
 
         if (pressedKeys.indexOf('p') >= 0) {
           stopAllMotors();
+          fireRequestActive = false;
+          fireOutputActive = false;
+          digitalWrite(RELAY1_PIN, LOW);
         }
 
         else if (pressedKeys.indexOf('h') >= 0) {
@@ -1049,11 +1370,11 @@ void loop() {
           moveToCenter(350);
         }
 
-        else if (pressedKeys.indexOf(',') >= 0) {
+        else if (pressedKeys.indexOf('u') >= 0) {
           zLift();
         }
 
-        else if (pressedKeys.indexOf('.') >= 0) {
+        else if (pressedKeys.indexOf('o') >= 0) {
           zDrop();
         }
 
@@ -1064,81 +1385,21 @@ void loop() {
           bool moveRight = (pressedKeys.indexOf('l') >= 0);  // +X command
 
           if (!moveUp && !moveDown && !moveLeft && !moveRight) {
-            int deadzoneX = 15;
-            int deadzoneY = 15;
+            visionControlActive = true;
+            applyVisionPControl();
+            
+          } else {
+            visionControlActive = false;
 
-            if (posX > deadzoneX) {
-              moveRight = true;
-            } else if (posX < -deadzoneX) {
-              moveLeft = true;
+            updateEncoderPosition();
+            blockMoveIfWouldExceedLimit(moveUp, moveDown, moveLeft, moveRight);
+
+            if (maxSpeedValue <= 0) {
+              stopAllMotors();
+            } else {
+              setDelayFromSpeedPercent(maxSpeedValue);
+              applyCoreXYMovement(moveUp, moveDown, moveLeft, moveRight);
             }
-
-            if (posY > deadzoneY) {
-              moveUp = true;
-            } else if (posY < -deadzoneY) {
-              moveDown = true;
-            }
-          }
-
-          updateEncoderPosition();
-
-          blockMoveIfWouldExceedLimit(moveUp, moveDown, moveLeft, moveRight);
-
-          isMovingUp = false;
-          isMovingDown = false;
-          isMovingLeft = false;
-          isMovingRight = false;
-
-          // ==================================================================
-          // APPLY COREXY MOVEMENT
-          // ==================================================================
-
-          if (moveUp && moveLeft) {
-            setMotorsXY(false, LOW, true, LOW);
-            isMovingUp = true;
-            isMovingLeft = true;
-          }
-
-          else if (moveUp && moveRight) {
-            setMotorsXY(true, HIGH, false, LOW);
-            isMovingUp = true;
-            isMovingRight = true;
-          }
-
-          else if (moveDown && moveLeft) {
-            setMotorsXY(true, LOW, false, LOW);
-            isMovingDown = true;
-            isMovingLeft = true;
-          }
-
-          else if (moveDown && moveRight) {
-            setMotorsXY(false, LOW, true, HIGH);
-            isMovingDown = true;
-            isMovingRight = true;
-          }
-
-          else if (moveUp) {
-            setMotorsXY(true, HIGH, true, LOW);
-            isMovingUp = true;
-          }
-
-          else if (moveDown) {
-            setMotorsXY(true, LOW, true, HIGH);
-            isMovingDown = true;
-          }
-
-          else if (moveLeft) {
-            setMotorsXY(true, LOW, true, LOW);
-            isMovingLeft = true;
-          }
-
-          else if (moveRight) {
-            setMotorsXY(true, HIGH, true, HIGH);
-            isMovingRight = true;
-          }
-
-          else {
-            stopAllMotors();
           }
 
           // ==================================================================
@@ -1156,11 +1417,11 @@ void loop() {
             if (digitalRead(LIMIT_Z_PIN) == LOW) {
               motorZRunning = false;
               digitalWrite(PULZ_PIN, LOW);
-
+              
               // NEW: Reset Z position when limit is hit manually
               currentZSteps = 0;
               isZUp = true;
-
+              
               Serial.println("Z LIMIT: UP blocked. Z position reset to 0. XY still allowed.");
             } else {
               moveZ(LOW);
@@ -1190,7 +1451,16 @@ void loop() {
           // RELAYS
           // ==================================================================
 
-          digitalWrite(RELAY1_PIN, (pressedKeys.indexOf('1') >= 0) ? HIGH : LOW);
+          bool manualFire = (pressedKeys.indexOf('1') >= 0);
+          bool autoFire = false;
+
+          if (visionControlActive && targetDetected == 1 &&
+              abs(targetOffsetPxX) <= VISION_DEADZONE_PX_X &&
+              abs(targetOffsetPxY) <= VISION_DEADZONE_PX_Y) {
+            autoFire = true;
+          }
+
+          fireRequestActive = (manualFire || autoFire);
           digitalWrite(RELAY2_PIN, (pressedKeys.indexOf('2') >= 0) ? HIGH : LOW);
         }
       }
@@ -1200,6 +1470,7 @@ void loop() {
     isCommandReady = false;
   }
 
+  updateFireControl();
   // ==========================================================================
   // 7. STEP GENERATION
   // ==========================================================================
@@ -1218,7 +1489,7 @@ void loop() {
 
     currentZSteps = 0;
     isZUp = true;
-
+    
     Serial.println("Z LIMIT: Z motor stopped. XY still allowed.");
   }
 
