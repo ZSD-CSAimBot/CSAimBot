@@ -217,3 +217,5 @@ Beta_v2_dataset/
 Beta_v3_dataset/
 Beta_v4_dataset/
 comms/.coverage
+Output/
+*.tar
