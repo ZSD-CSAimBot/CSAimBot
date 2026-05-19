@@ -453,6 +453,9 @@ class GUI:
                 dpg.add_theme_color(dpg.mvThemeCol_FrameBg, [255, 190, 25, 255])
                 dpg.add_theme_color(dpg.mvThemeCol_FrameBgHovered, [255, 200, 0, 255])
                 dpg.add_theme_color(dpg.mvThemeCol_Text, [0, 0, 0, 255])
+                dpg.add_theme_color(dpg.mvThemeCol_PopupBg, [255, 190, 25, 255])
+                dpg.add_theme_color(dpg.mvThemeCol_Header, [220, 155, 0, 255])
+                dpg.add_theme_color(dpg.mvThemeCol_HeaderHovered, [240, 170, 10, 255])
                 dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 5)
 
         with dpg.theme() as self.stat_card_theme:
