@@ -1233,7 +1233,7 @@ class GUI:
                                 with dpg.group(horizontal=True):
                                     btn_gripper = dpg.add_button(
                                         label="Gripper Test",
-                                        width=200,
+                                        width=216,
                                         height=45,
                                         tag=self.rs(200, 45, tag="btn_gripper_control"),
                                     )
@@ -2080,10 +2080,20 @@ class GUI:
             )
             self.add_log("<System> EMERGENCY STOP ACTIVATED", color=[255, 0, 0])
 
+    def run_calibration(self):
+        """Run the calibration process in a separate thread to avoid blocking the UI."""
+        if self.is_connected:
+            calibration = CSGOTelemetry()
+            edpi = int(calibration.start_listening())
+            self.comms_pipe.send({"cmd": "SEND", "value": f"CALIBRATION,{edpi}"})
+        else:
+            print("Please connect to the ESP32 and run calibration again.")
+
     def on_calibrate(self, sender=None, app_data=None):
         """Start calibration in the vision worker."""
-        self.pipe.send({"cmd": "CALIBRATE"})
-
+        print("Starting calibration...")
+        threading.Thread(target=self.run_calibration, daemon=True).start()
+    
     def on_start_sim(self, sender=None, app_data=None):
         """Request simulation start."""
         self.simulation_state = "starting"
@@ -2335,7 +2345,6 @@ class GUI:
         """Show the viewport and enter the main UI loop."""
         dpg.set_primary_window("window_root", True)
         dpg.show_viewport()
-
         last_sent_key = ""
 
         while dpg.is_dearpygui_running():
@@ -2365,19 +2374,19 @@ class GUI:
             elif dpg.does_item_exist("btn_left_gripper") and dpg.is_item_active(
                 "btn_left_gripper"
             ):
-                current_key = "x"
+                current_key = "u"
             elif dpg.does_item_exist("btn_right_gripper") and dpg.is_item_active(
                 "btn_right_gripper"
             ):
-                current_key = "z"
+                current_key = "o"
 
             # Main action buttons (Relays & Servo)
-            elif dpg.does_item_exist("btn_lmb_control") and dpg.is_item_active(
-                "btn_lmb_control"
+            elif dpg.does_item_exist("btn_lpm_control") and dpg.is_item_active(
+                "btn_lpm_control"
             ):
                 current_key = "1"
-            elif dpg.does_item_exist("btn_rmb_control") and dpg.is_item_active(
-                "btn_rmb_control"
+            elif dpg.does_item_exist("btn_ppm_control") and dpg.is_item_active(
+                "btn_ppm_control"
             ):
                 current_key = "2"
             elif dpg.does_item_exist("btn_gripper_control") and dpg.is_item_active(
@@ -2393,20 +2402,23 @@ class GUI:
             ):
                 current_key = "c"
 
-            if not current_key:
-                # Keyboard input is already forwarded by comms_worker
-                pass
-
-            if current_key != last_sent_key:
-                if self.is_connected:
-                    self.comms_pipe.send(
-                        {
-                            "cmd": "SEND",
-                            "value": f"0,0,{self.current_speed},{current_key}",
-                        }
-                    )
-                last_sent_key = current_key
-
+            if current_key:
+                if current_key != last_sent_key or current_key in ("i", "j", "k", "l"):
+                    command = f"0,0,0,{current_key},{self.current_speed},0"
+                    print(f"<GUI_SEND> {command}", flush=True)
+                    
+                    if self.is_connected:
+                        self.comms_pipe.send(
+                            {
+                                "cmd": "SEND",
+                                "value": command,
+                            }
+                        )
+                    
+                    last_sent_key = current_key
+            else:
+                last_sent_key = ""
+                
             for page_tag, elements in self.nav_elements.items():
                 config = self.nav_config.get(page_tag)
                 if dpg.does_item_exist(elements["btn"]) and dpg.does_item_exist(

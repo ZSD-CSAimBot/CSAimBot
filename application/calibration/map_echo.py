@@ -1,5 +1,4 @@
 import socket
-import math
 
 
 class CSGOTelemetry:
@@ -37,15 +36,12 @@ class CSGOTelemetry:
         print(f"Step 2: Fire the second shot (after moving {self.mouse_distance_inches})\n")
 
         while True:
-            data, addr = self.sock.recvfrom(1024)
+            data, _ = self.sock.recvfrom(1024)
             msg = data.decode('utf-8').strip('\x00')
             parts = msg.split(';')
 
             if parts[0] == "IMPACT":
-                #splitting the plugin information
                 player = parts[1]
-                x, y, z = float(parts[2]), float(parts[3]), float(parts[4])
-                pitch = float(parts[5])
                 yaw = float(parts[6])
 
                 if self.first_shot_yaw is None:
@@ -54,7 +50,6 @@ class CSGOTelemetry:
                     if self.callback:
                         self.callback("First shot recorded. Waiting for second...")
                 else:
-
                     delta = self._calculate_delta(self.first_shot_yaw, yaw)
                     edpi = self._calculate_edpi(delta)
 
@@ -68,11 +63,9 @@ class CSGOTelemetry:
 
                     if self.callback:
                         self.callback(f"Finished! eDPI: {edpi:.0f} (Delta: {delta:.2f} deg)")
-
                     self.first_shot_yaw = None
-                    print("Can calibrate again")
+                    return edpi
 
 
 if __name__ == "__main__":
-    telemetry_system = CSGOTelemetry(mouse_distance_inches=4.8228346)
-    telemetry_system.start_listening()
+    print("Do not run this file directly.")
