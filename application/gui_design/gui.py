@@ -12,7 +12,7 @@ import serial.tools.list_ports
 # X is the end stop near the motor.
 # Y is the carriage axis with the gripper.
 from utils.json_utils import StatsManager
-
+from calibration.map_echo import CSGOTelemetry
 
 class GUI:
     """Main Dear PyGui application wrapper."""
@@ -47,6 +47,8 @@ class GUI:
         self.pos_x = 0
         self.pos_y = 0
         self.pos_z = 0
+        self.enc_1 = 0
+        self.enc_2 = 0
 
         # Vision target offsets from aimbot.py.
         # These must NOT be mixed with manual jog coordinates.
@@ -869,12 +871,12 @@ class GUI:
         """Construct the full Dear PyGui interface."""
         dpg.bind_theme(self.global_theme)
         with dpg.window(
-                tag=self.rs(self.width, self.height, tag="window_root"),
-                width=self.width,
-                height=self.height,
-                no_title_bar=True,
-                no_resize=True,
-                no_move=True,
+            tag=self.rs(self.width, self.height, tag="window_root"),
+            width=self.width,
+            height=self.height,
+            no_title_bar=True,
+            no_resize=True,
+            no_move=True,
         ):
             dpg.bind_item_theme("window_root", self.root_theme)
 
@@ -969,7 +971,7 @@ class GUI:
                             dpg.add_spacer(width=60, tag=self.rs(w=60))
 
                             with dpg.child_window(
-                                    width=470, height=220, tag=self.rs(470, 220)
+                                width=470, height=220, tag=self.rs(470, 220)
                             ):
                                 dpg.add_spacer(height=10, tag=self.rs(h=10))
                                 with dpg.group(horizontal=True):
@@ -1291,13 +1293,13 @@ class GUI:
 
                                 # SPEED SLIDER RESTORED
                                 with dpg.table(
-                                        header_row=False,
-                                        width=470,
-                                        borders_innerH=False,
-                                        borders_outerH=False,
-                                        borders_innerV=False,
-                                        borders_outerV=False,
-                                        tag=self.rs(w=470),
+                                    header_row=False,
+                                    width=470,
+                                    borders_innerH=False,
+                                    borders_outerH=False,
+                                    borders_innerV=False,
+                                    borders_outerV=False,
+                                    tag=self.rs(w=470),
                                 ):
                                     dpg.add_table_column(
                                         width_fixed=True,
@@ -1731,7 +1733,7 @@ class GUI:
                                     idx = row * 4 + col
                                     c_id, c_tex = card_data[idx]
                                     with dpg.child_window(
-                                            width=255, height=295, tag=self.rs(255, 295)
+                                        width=255, height=295, tag=self.rs(255, 295)
                                     ) as card_win:
                                         dpg.add_spacer(height=5, tag=self.rs(h=5))
                                         if c_tex:
@@ -1791,14 +1793,14 @@ class GUI:
                             if row == 0:
                                 dpg.add_spacer(height=20, tag=self.rs(h=20))
         with dpg.window(
-                tag=self.rs(self.width, self.height, tag="window_dim"),
-                width=self.width,
-                height=self.height,
-                pos=(0, 0),
-                no_title_bar=True,
-                no_resize=True,
-                no_move=True,
-                show=False,
+            tag=self.rs(self.width, self.height, tag="window_dim"),
+            width=self.width,
+            height=self.height,
+            pos=(0, 0),
+            no_title_bar=True,
+            no_resize=True,
+            no_move=True,
+            show=False,
         ):
             dpg.bind_item_theme("window_dim", self.dim_theme)
             dpg.add_button(
@@ -1810,21 +1812,21 @@ class GUI:
             dpg.bind_item_theme(dpg.last_item(), self.invisible_btn_theme)
 
         with dpg.window(
-                tag=self.rs(60, self.height, tag="window_sidebar"),
-                width=60,
-                height=self.height,
-                pos=(0, 0),
-                no_title_bar=True,
-                no_resize=True,
-                no_move=True,
+            tag=self.rs(60, self.height, tag="window_sidebar"),
+            width=60,
+            height=self.height,
+            pos=(0, 0),
+            no_title_bar=True,
+            no_resize=True,
+            no_move=True,
         ):
             dpg.bind_item_theme("window_sidebar", self.sidebar_theme)
             with dpg.child_window(
-                    tag=self.rs(60, self.height, tag="sidebar_child"),
-                    width=60,
-                    height=self.height,
-                    border=False,
-                    no_scrollbar=True,
+                tag=self.rs(60, self.height, tag="sidebar_child"),
+                width=60,
+                height=self.height,
+                border=False,
+                no_scrollbar=True,
             ):
                 self.nav_texts = []
                 with dpg.group(horizontal=True):
@@ -1929,7 +1931,9 @@ class GUI:
         """Update the active speed setting."""
         self.current_speed = int(app_data)
         t = self.lang_dict[self.current_lang]
-        dpg.set_value("speed_text_label_control", f"{t['speed']}: {self.current_speed}%")
+        dpg.set_value(
+            "speed_text_label_control", f"{t['speed']}: {self.current_speed}%"
+        )
 
     def on_target_change(self, sender, app_data):
         """Update target prioritization across the UI."""
@@ -2057,6 +2061,8 @@ class GUI:
         formatted_x = f"{self.pos_x:.2f}"
         formatted_y = f"{self.pos_y:.2f}"
         formatted_z = f"{self.pos_z:.2f}"
+        formatted_e1 = f"{self.enc_1}"
+        formatted_e2 = f"{self.enc_2}"
 
         for tag_x in ["coord_x_control", "coord_x_home"]:
             if dpg.does_item_exist(tag_x):
@@ -2080,7 +2086,9 @@ class GUI:
         if self.mouse_blocker_pipe:
             self.mouse_blocker_pipe.send({"cmd": "STOP"})
         if self.is_connected:
-            self.comms_pipe.send({"cmd": "SEND", "value": f"0,0,{self.current_speed},p"})
+            self.comms_pipe.send(
+                {"cmd": "SEND", "value": f"0,0,{self.current_speed},p"}
+            )
             self.add_log("<System> EMERGENCY STOP ACTIVATED", color=[255, 0, 0])
 
     def on_calibrate(self, sender=None, app_data=None):
@@ -2314,53 +2322,53 @@ class GUI:
 
             # X-Axis Jogging (LMB row)
             if dpg.does_item_exist("btn_left_lmb") and dpg.is_item_active(
-                    "btn_left_lmb"
+                "btn_left_lmb"
             ):
                 current_key = "j"
             elif dpg.does_item_exist("btn_right_lmb") and dpg.is_item_active(
-                    "btn_right_lmb"
+                "btn_right_lmb"
             ):
                 current_key = "l"
 
             # Y-Axis Jogging (RMB row)
             elif dpg.does_item_exist("btn_left_rmb") and dpg.is_item_active(
-                    "btn_left_rmb"
+                "btn_left_rmb"
             ):
                 current_key = "k"
             elif dpg.does_item_exist("btn_right_rmb") and dpg.is_item_active(
-                    "btn_right_rmb"
+                "btn_right_rmb"
             ):
                 current_key = "i"
 
             # Z-Axis Jogging (Gripper row)
             elif dpg.does_item_exist("btn_left_gripper") and dpg.is_item_active(
-                    "btn_left_gripper"
+                "btn_left_gripper"
             ):
                 current_key = "x"
             elif dpg.does_item_exist("btn_right_gripper") and dpg.is_item_active(
-                    "btn_right_gripper"
+                "btn_right_gripper"
             ):
                 current_key = "z"
 
             # Main action buttons (Relays & Servo)
             elif dpg.does_item_exist("btn_lmb_control") and dpg.is_item_active(
-                    "btn_lmb_control"
+                "btn_lmb_control"
             ):
                 current_key = "1"
             elif dpg.does_item_exist("btn_rmb_control") and dpg.is_item_active(
-                    "btn_rmb_control"
+                "btn_rmb_control"
             ):
                 current_key = "2"
             elif dpg.does_item_exist("btn_gripper_control") and dpg.is_item_active(
-                    "btn_gripper_control"
+                "btn_gripper_control"
             ):
                 current_key = "v"
             elif dpg.does_item_exist("btn_homing_control") and dpg.is_item_active(
-                    "btn_homing_control"
+                "btn_homing_control"
             ):
                 current_key = "h"
             elif dpg.does_item_exist("btn_centering_control") and dpg.is_item_active(
-                    "btn_centering_control"
+                "btn_centering_control"
             ):
                 current_key = "c"
 
@@ -2381,15 +2389,15 @@ class GUI:
             for page_tag, elements in self.nav_elements.items():
                 config = self.nav_config.get(page_tag)
                 if dpg.does_item_exist(elements["btn"]) and dpg.does_item_exist(
-                        elements["text"]
+                    elements["text"]
                 ):
                     if page_tag == self.active_page_tag:
                         dpg.configure_item(
-                            elements["btn"], texture_tag=config["active_tex"]  # type: ignore
+                            elements["btn"], texture_tag=config["active_tex"] #type: ignore
                         )
                     else:
                         dpg.configure_item(
-                            elements["btn"], texture_tag=config["inactive_tex"]  # type: ignore
+                            elements["btn"], texture_tag=config["inactive_tex"] #type: ignore
                         )
 
             dpg.render_dearpygui_frame()

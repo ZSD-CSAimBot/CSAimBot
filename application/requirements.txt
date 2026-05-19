@@ -16,7 +16,7 @@ numpy==2.4.4
 pyserial==3.5
 roslibpy==2.0.0
 pynput==1.8.1
-screeninfo==0.8.1
+2==0.8.1
 
 bettercam==1.0.0; sys_platform == 'win32'
 cupy-cuda12x==13.6.0; sys_platform == 'win32'
