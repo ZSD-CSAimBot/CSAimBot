@@ -1262,6 +1262,11 @@ void loop() {
       isCommandReady = false;
       bufferIndex = 0;
     }
+    else if (data.substring(0, 11) == "CALIBRATION") {
+      int calibrated_edpi = data.substring(12).toInt();
+      pxToCmX = 1.0 * 2.54 / calibrated_edpi;
+      pxToCmY = 1.0 * 2.54 / calibrated_edpi;
+    }
     else if (data.length() > 0) {
       int commaIndexes[5] = {0, 0, 0, 0, 0};
       int commaIndex = 0;

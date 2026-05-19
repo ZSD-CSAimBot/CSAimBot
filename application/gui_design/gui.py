@@ -47,20 +47,11 @@ class GUI:
         self.pos_x = 0
         self.pos_y = 0
         self.pos_z = 0
-        self.enc_1 = 0
-        self.enc_2 = 0
 
         # Vision target offsets from aimbot.py.
         # These must NOT be mixed with manual jog coordinates.
         self.manual_keys = ""
         self.current_speed = 75
-        # PID Controller variables for visual servoing
-        self.kp = 0.4  # Proportional gain (depends on current error)
-        self.ki = 0.0  # Integral gain (depends on sum of past errors)
-        self.kd = 0.1  # Derivative gain (depends on rate of error change)
-        self.pid_integral = 0.0
-        self.pid_prev_error = 0.0
-        self.pid_last_time = time.time()
         self.current_scale = 1.0
 
         # Data buffers for plotting X/Y positions and distance to target over time.
@@ -1242,7 +1233,7 @@ class GUI:
                                 with dpg.group(horizontal=True):
                                     btn_gripper = dpg.add_button(
                                         label="Gripper Test",
-                                        width=200,
+                                        width=216,
                                         height=45,
                                         tag=self.rs(200, 45, tag="btn_gripper_control"),
                                     )
@@ -2061,8 +2052,6 @@ class GUI:
         formatted_x = f"{self.pos_x:.2f}"
         formatted_y = f"{self.pos_y:.2f}"
         formatted_z = f"{self.pos_z:.2f}"
-        formatted_e1 = f"{self.enc_1}"
-        formatted_e2 = f"{self.enc_2}"
 
         for tag_x in ["coord_x_control", "coord_x_home"]:
             if dpg.does_item_exist(tag_x):
@@ -2091,10 +2080,20 @@ class GUI:
             )
             self.add_log("<System> EMERGENCY STOP ACTIVATED", color=[255, 0, 0])
 
+    def run_calibration(self):
+        """Run the calibration process in a separate thread to avoid blocking the UI."""
+        if self.is_connected:
+            calibration = CSGOTelemetry()
+            edpi = int(calibration.start_listening())
+            self.comms_pipe.send({"cmd": "SEND", "value": f"CALIBRATION,{edpi}"})
+        else:
+            print("Please connect to the ESP32 and run calibration again.")
+
     def on_calibrate(self, sender=None, app_data=None):
         """Start calibration in the vision worker."""
-        self.pipe.send({"cmd": "CALIBRATE"})
-
+        print("Starting calibration...")
+        threading.Thread(target=self.run_calibration, daemon=True).start()
+    
     def on_start_sim(self, sender=None, app_data=None):
         """Request simulation start."""
         self.simulation_state = "starting"
@@ -2172,6 +2171,7 @@ class GUI:
                     dpg.set_value("series_vision_dist", [self.plot_vision_time_data, self.plot_vision_dist_data])
                     dpg.fit_axis_data("control_plot_x")
                     dpg.fit_axis_data("control_plot_y")
+                    
             while self.comms_pipe.poll():
                 msg = self.comms_pipe.recv()
 
@@ -2228,6 +2228,7 @@ class GUI:
                                 dpg.set_value("series_pos_y", [self.plot_time_data, self.plot_y_data])
                                 dpg.fit_axis_data("home_plot2_x")
                                 dpg.fit_axis_data("home_plot2_y")
+                                
                     except (ValueError, IndexError, AttributeError):
                         pass
 
@@ -2344,7 +2345,6 @@ class GUI:
         """Show the viewport and enter the main UI loop."""
         dpg.set_primary_window("window_root", True)
         dpg.show_viewport()
-
         last_sent_key = ""
 
         while dpg.is_dearpygui_running():
@@ -2374,19 +2374,19 @@ class GUI:
             elif dpg.does_item_exist("btn_left_gripper") and dpg.is_item_active(
                 "btn_left_gripper"
             ):
-                current_key = "x"
+                current_key = "u"
             elif dpg.does_item_exist("btn_right_gripper") and dpg.is_item_active(
                 "btn_right_gripper"
             ):
-                current_key = "z"
+                current_key = "o"
 
             # Main action buttons (Relays & Servo)
-            elif dpg.does_item_exist("btn_lmb_control") and dpg.is_item_active(
-                "btn_lmb_control"
+            elif dpg.does_item_exist("btn_lpm_control") and dpg.is_item_active(
+                "btn_lpm_control"
             ):
                 current_key = "1"
-            elif dpg.does_item_exist("btn_rmb_control") and dpg.is_item_active(
-                "btn_rmb_control"
+            elif dpg.does_item_exist("btn_ppm_control") and dpg.is_item_active(
+                "btn_ppm_control"
             ):
                 current_key = "2"
             elif dpg.does_item_exist("btn_gripper_control") and dpg.is_item_active(
@@ -2402,20 +2402,23 @@ class GUI:
             ):
                 current_key = "c"
 
-            if not current_key:
-                # Keyboard input is already forwarded by comms_worker
-                pass
-
-            if current_key != last_sent_key:
-                if self.is_connected:
-                    self.comms_pipe.send(
-                        {
-                            "cmd": "SEND",
-                            "value": f"0,0,{self.current_speed},{current_key}",
-                        }
-                    )
-                last_sent_key = current_key
-
+            if current_key:
+                if current_key != last_sent_key or current_key in ("i", "j", "k", "l"):
+                    command = f"0,0,0,{current_key},{self.current_speed},0"
+                    print(f"<GUI_SEND> {command}", flush=True)
+                    
+                    if self.is_connected:
+                        self.comms_pipe.send(
+                            {
+                                "cmd": "SEND",
+                                "value": command,
+                            }
+                        )
+                    
+                    last_sent_key = current_key
+            else:
+                last_sent_key = ""
+                
             for page_tag, elements in self.nav_elements.items():
                 config = self.nav_config.get(page_tag)
                 if dpg.does_item_exist(elements["btn"]) and dpg.does_item_exist(

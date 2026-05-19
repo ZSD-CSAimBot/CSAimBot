@@ -200,18 +200,18 @@ class KeyboardInputModule:
             estop_key: Emergency stop key character (default: 'p')
         """
         self.tracked_keys = tracked_keys or [
-            "i",
-            "j",
-            "k",
-            "l",
-            "v",
-            "1",
-            "2",
-            "h",
-            "c",
-            "u",
-            "o",
-            ']'
+            "i", # forward
+            "j", # left
+            "k", # backward
+            "l", # right
+            "v", # gripper
+            "1", # lmb
+            "2", # rmb
+            "h", # homing
+            "c", # center
+            "u", # z-up
+            "o", # z-down
+            ']'  # calibration
         ]
         self.estop_key = estop_key
         self.pressed_keys = set()
