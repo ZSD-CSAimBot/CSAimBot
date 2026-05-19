@@ -88,7 +88,6 @@ class AimBot:
 
         self.center_threshold_x = 12
         self.center_threshold_y = 12
-
         # Existing recoil-related settings
         self.shoot_threshold = 2
         self.recoil_strength = 5

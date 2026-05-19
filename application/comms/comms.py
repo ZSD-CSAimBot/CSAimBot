@@ -186,19 +186,21 @@ def comms_worker(conn):
 class KeyboardInputModule:
     """
     Keyboard input listener using pynput library.
-    
+
     Tracks specific keys for device control and an emergency stop key.
     Runs a background listener thread to capture key events.
     """
+
     def __init__(self, tracked_keys=None, estop_key="p"):
         """
         Initialize keyboard listener.
-        
+
         Args:
             tracked_keys: List of keys to monitor (default: movement and control keys)
             estop_key: Emergency stop key character (default: 'p')
         """
-        self.tracked_keys = tracked_keys or ['i', 'j', 'k', 'l', 'z', 'x', 'v', '1', '2', 'h', 'c',',','.']
+        # Added ']' to the tracked keys list
+        self.tracked_keys = tracked_keys or ['i', 'j', 'k', 'l', 'z', 'x', 'v', '1', '2', 'h', 'c', ',', '.', ']']
         self.estop_key = estop_key
         self.pressed_keys = set()
         self.listener = pynput_kb.Listener(

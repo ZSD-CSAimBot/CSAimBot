@@ -12,6 +12,7 @@ import serial.tools.list_ports
 # X is the end stop near the motor.
 # Y is the carriage axis with the gripper.
 from utils.json_utils import StatsManager
+from calibration.map_echo import CSGOTelemetry
 
 
 class GUI:
@@ -52,7 +53,8 @@ class GUI:
         self.target_offset_y = 0
         self.manual_keys = ""
         self.current_speed = 75
-        # PD ORLUK ZMIANA NA LEPSZE :)
+
+        self.is_calibrating = False
 
         self.kp = 0.25
         self.ki = 0.0
@@ -1253,9 +1255,68 @@ class GUI:
             self.comms_pipe.send({"cmd": "SEND", "value": f"0,0,{self.current_speed},p"})
             self.add_log("<System> EMERGENCY STOP ACTIVATED", color=[255, 0, 0])
 
+    def on_telemetry_result(self, result_msg):
+        """Callback to handle results from the telemetry listener."""
+        self.add_log(f"<Calibration> {result_msg}", color=[50, 255, 50])
+
     def on_calibrate(self):
-        """Start calibration in the vision worker."""
-        self.pipe.send({"cmd": "CALIBRATE"})
+        """Initiate calibration mode and wait for user trigger."""
+        self.is_calibrating = True
+        self.add_log("<Calibration> Ready. Press ']' in game to start the sequence.", color=[255, 255, 0])
+
+    def calibration_sequence(self):
+        """Automated physical sequence for calibration using precise encoder feedback."""
+        self.add_log("<Calibration> Sequence started. Centering robot...", color=[255, 255, 0])
+
+        target_distance_cm = 5.0
+        initial_distance_inches = target_distance_cm / 2.54
+
+        telemetry = CSGOTelemetry(mouse_distance_inches=initial_distance_inches, callback=self.on_telemetry_result)
+        threading.Thread(target=telemetry.start_listening, daemon=True).start()
+
+        # Center the robot
+        if self.is_connected:
+            self.comms_pipe.send({"cmd": "SEND", "value": f"0,0,{self.current_speed},c"})
+        time.sleep(6.0)
+        actual_start_x = self.pos_x
+
+        self.add_log("<Calibration> Firing first shot...", color=[255, 255, 0])
+        if self.is_connected:
+            self.comms_pipe.send({"cmd": "SEND", "value": f"0,0,{self.current_speed},1"})
+        time.sleep(0.15)
+        if self.is_connected:
+            self.comms_pipe.send({"cmd": "SEND", "value": f"0,0,{self.current_speed},"})
+        time.sleep(1.0)
+
+        self.add_log(f"<Calibration> Moving left (target: {target_distance_cm}cm)...", color=[255, 255, 0])
+        if self.is_connected:
+            self.comms_pipe.send({"cmd": "SEND", "value": f"0,0,{self.current_speed},l"})
+
+        timeout = time.time() + 6.0
+        while time.time() < timeout:
+            if abs(self.pos_x - actual_start_x) >= target_distance_cm:
+                break
+            time.sleep(0.01)
+
+        if self.is_connected:
+            self.comms_pipe.send({"cmd": "SEND", "value": f"0,0,{self.current_speed},"})
+        time.sleep(1.5)
+
+        actual_distance_cm = abs(self.pos_x - actual_start_x)
+        real_distance_inches = actual_distance_cm / 2.54
+
+        self.add_log(
+            f"<Calibration> Robot stopped. Real distance: {actual_distance_cm:.2f} cm ({real_distance_inches:.4f} inches)",
+            color=[255, 183, 0])
+
+        telemetry.mouse_distance_inches = real_distance_inches
+
+        self.add_log("<Calibration> Firing second shot...", color=[255, 255, 0])
+        if self.is_connected:
+            self.comms_pipe.send({"cmd": "SEND", "value": f"0,0,{self.current_speed},1"})
+        time.sleep(0.15)
+        if self.is_connected:
+            self.comms_pipe.send({"cmd": "SEND", "value": f"0,0,{self.current_speed},"})
 
     def on_start_sim(self):
         """Request simulation start."""
@@ -1349,7 +1410,6 @@ class GUI:
                 now = time.time()
 
                 if self.is_connected and not self.manual_keys:
-                    # 0.02 = około 50 Hz. Jeśli ESP/serial nie wyrabia, zmień na 0.03 albo 0.05.
                     if force_update or (now - last_vision_send > 0.02):
 
                         dist = math.hypot(self.target_offset_x, self.target_offset_y)
@@ -1398,6 +1458,10 @@ class GUI:
                 elif msg.get("type") == "keyboard":
                     keys = msg.get("keys") or ""
                     self.manual_keys = keys
+
+                    if self.is_calibrating and ']' in keys:
+                        self.is_calibrating = False
+                        threading.Thread(target=self.calibration_sequence, daemon=True).start()
 
                     if self.is_connected:
                         if keys:
