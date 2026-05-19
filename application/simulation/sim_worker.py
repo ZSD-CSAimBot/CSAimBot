@@ -139,7 +139,7 @@ class SimulationController:
                 )
 
             sim_process = subprocess.Popen(
-                ["bash", path], stdout=self.sim_log_file, stderr=subprocess.DEVNULL
+                ["bash", path], stdout=self.sim_log_file, stderr=subprocess.STDOUT
             )
         else:
             sim_process = None
