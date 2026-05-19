@@ -210,7 +210,8 @@ class KeyboardInputModule:
             "h",
             "c",
             "u",
-            "o"
+            "o",
+            ']'
         ]
         self.estop_key = estop_key
         self.pressed_keys = set()
