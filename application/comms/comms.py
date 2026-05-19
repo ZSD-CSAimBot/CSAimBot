@@ -97,7 +97,6 @@ class SerialCommsModule:
             text_to_send = f"{command}\r".encode("utf-8")
             self.esp.write(text_to_send)
             self.esp.flush()
-            print(f"Sent: {command}")
         else:
             print("Port closed. Unable to send command.")
 
@@ -205,13 +204,13 @@ class KeyboardInputModule:
             "j",
             "k",
             "l",
-            "z",
-            "x",
             "v",
             "1",
             "2",
             "h",
             "c",
+            "u",
+            "o"
         ]
         self.estop_key = estop_key
         self.pressed_keys = set()

@@ -65,8 +65,9 @@ class AimBot:
         )
         self.best_target_position = (0, 0)
         self.shoot_threshold = 2
-        self.recoil_strength = 5
+        self.recoil_strength = 1
         self.recoil_control = False
+        self.is_holding_sniper = False
         self.head_class_id = [1, 7]
         self.body_class_id = [0, 6]
 
@@ -102,7 +103,7 @@ class AimBot:
                 offset_y += self.recoil_strength
         return offset_x, offset_y
 
-    def update_recoil_state(self, boxes_data_tensor):
+    def update_params_state(self, boxes_data_tensor):
         """
         Check if the current detections include the rifle class to determine if recoil control should be active.
 
@@ -114,40 +115,63 @@ class AimBot:
 
         cls = boxes_data_tensor[:, 5]
         rifle_class_id = 3
-        return (cls == rifle_class_id).any().item()
+        sniper_class_id = 5
+        return (cls == rifle_class_id).any().item(), (cls == sniper_class_id).any().item()
 
     def calculate_best_target_position(self, boxes_data_tensor):
         """
-        Select the nearest valid detection and return its offset from screen center.
-
-        Args:
-            boxes_data_tensor: Tensor of detections in xyxy format with class ids.
-
-        Returns:
-            A tuple of offsets from screen center, or (None, None) when no valid target exists.
+        Select target with priority:
+        1. Head classes first
+        2. Body classes only if no head is detected
+        3. Within selected group, choose the closest to screen center
         """
         if boxes_data_tensor is None or boxes_data_tensor.shape[0] == 0:
             return None, None
 
         cls = boxes_data_tensor[:, 5]
-        valid_classes = torch.tensor(
-            self.head_class_id + self.body_class_id, device=boxes_data_tensor.device
-        )
-        mask = torch.isin(cls, valid_classes)
-        valid_boxes = boxes_data_tensor[mask]
 
-        if valid_boxes.shape[0] == 0:
+        head_classes = torch.tensor(
+            self.head_class_id,
+            device=boxes_data_tensor.device
+        )
+
+        body_classes = torch.tensor(
+            self.body_class_id,
+            device=boxes_data_tensor.device
+        )
+
+        head_mask = torch.isin(cls, head_classes)
+        body_mask = torch.isin(cls, body_classes)
+
+        head_boxes = boxes_data_tensor[head_mask]
+        body_boxes = boxes_data_tensor[body_mask]
+
+        # Priority: head first, body only if no head exists
+        if head_boxes.shape[0] > 0:
+            selected_boxes = head_boxes
+            target_type = "HEAD"
+        elif body_boxes.shape[0] > 0:
+            selected_boxes = body_boxes
+            target_type = "BODY"
+        else:
             return None, None
 
-        centers_x = (valid_boxes[:, 0] + valid_boxes[:, 2]) / 2.0
-        centers_y = (valid_boxes[:, 1] + valid_boxes[:, 3]) / 2.0
+        centers_x = (selected_boxes[:, 0] + selected_boxes[:, 2]) / 2.0
+        centers_y = (selected_boxes[:, 1] + selected_boxes[:, 3]) / 2.0
+
         offsets_x = centers_x - (self.FOV_WIDTH / 2.0)
         offsets_y = centers_y - (self.FOV_HEIGHT / 2.0)
-        distances_sq = (offsets_x**2) + (offsets_y**2)
+
+        distances_sq = (offsets_x ** 2) + (offsets_y ** 2)
         best_idx = torch.argmin(distances_sq)
 
         offset_x = int(round(offsets_x[best_idx].item()))
         offset_y = int(round(offsets_y[best_idx].item()))
+
+        print(
+            f"<TARGET_SELECT> type={target_type} x={offset_x} y={offset_y}",
+            flush=True
+        )
 
         return self.recoil_compensation(offset_x, offset_y)
 
@@ -210,14 +234,14 @@ class AimBot:
         if not self.capture_and_preprocess_frame():
             return
 
-        results = self.model(self.model_tensor, verbose=False)
+        results = self.model(self.model_tensor,conf=0.50, verbose=False)
         torch.cuda.synchronize()
 
         if results[0].boxes is not None and len(results[0].boxes) > 0:
             result_tensor = results[0].boxes.data
             num_detections = len(results[0].boxes)
 
-            self.recoil_control = self.update_recoil_state(result_tensor)
+            self.recoil_control, self.is_holding_sniper = self.update_params_state(result_tensor)
             result = self.calculate_best_target_position(result_tensor)
             self.best_target_position = result if result[0] is not None else ("-", "-")
 
@@ -279,18 +303,18 @@ def vision_worker(pipe_conn, model_path, target_fps):
                     break
 
             if is_running:
-                try:
-                    offset_x = aimbot.best_target_position[0]
-                    offset_y = aimbot.best_target_position[1]
-                    pipe_conn.send({"type": "offsets", "x": offset_x, "y": offset_y})
-                except Exception as e:
-                    print(e)
-                    pass
                 start_time = time.perf_counter()
                 aimbot.process_single_frame()
                 elapsed_time = time.perf_counter() - start_time
                 if elapsed_time < target_frame_time:
                     time.sleep(target_frame_time - elapsed_time)
+                try:
+                    offset_x = aimbot.best_target_position[0]
+                    offset_y = aimbot.best_target_position[1]
+                    pipe_conn.send({"type": "offsets", "x": offset_x, "y": offset_y, "sniper": aimbot.is_holding_sniper})
+                except Exception as e:
+                    print(e)
+                    pass
             else:
                 time.sleep(0.05)
 
