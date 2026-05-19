@@ -47,20 +47,11 @@ class GUI:
         self.pos_x = 0
         self.pos_y = 0
         self.pos_z = 0
-        self.enc_1 = 0
-        self.enc_2 = 0
 
         # Vision target offsets from aimbot.py.
         # These must NOT be mixed with manual jog coordinates.
         self.manual_keys = ""
         self.current_speed = 75
-        # PID Controller variables for visual servoing
-        self.kp = 0.4  # Proportional gain (depends on current error)
-        self.ki = 0.0  # Integral gain (depends on sum of past errors)
-        self.kd = 0.1  # Derivative gain (depends on rate of error change)
-        self.pid_integral = 0.0
-        self.pid_prev_error = 0.0
-        self.pid_last_time = time.time()
         self.current_scale = 1.0
 
         # Data buffers for plotting X/Y positions and distance to target over time.
@@ -2061,8 +2052,6 @@ class GUI:
         formatted_x = f"{self.pos_x:.2f}"
         formatted_y = f"{self.pos_y:.2f}"
         formatted_z = f"{self.pos_z:.2f}"
-        formatted_e1 = f"{self.enc_1}"
-        formatted_e2 = f"{self.enc_2}"
 
         for tag_x in ["coord_x_control", "coord_x_home"]:
             if dpg.does_item_exist(tag_x):
@@ -2160,6 +2149,19 @@ class GUI:
                         target_offset_y = 0
                         vision_has_target = False
 
+            curr_time = time.time() - self.start_time
+            dist = math.hypot(target_offset_x, target_offset_y)
+            self.plot_vision_time_data.append(curr_time)
+            self.plot_vision_dist_data.append(dist)
+            if len(self.plot_vision_time_data) > self.max_plot_points:
+                self.plot_vision_time_data.pop(0)
+                self.plot_vision_dist_data.pop(0)
+            
+            if dpg.does_item_exist("series_vision_dist"):
+                dpg.set_value("series_vision_dist", [self.plot_vision_time_data, self.plot_vision_dist_data])
+                dpg.fit_axis_data("control_plot_x")
+                dpg.fit_axis_data("control_plot_y")
+
             while self.comms_pipe.poll():
                 msg = self.comms_pipe.recv()
 
@@ -2197,6 +2199,25 @@ class GUI:
                                     self.pos_z = float(part.split(":")[1].strip())
 
                             self._update_coords_display()
+
+                            curr_time = time.time() - self.start_time
+                            self.plot_time_data.append(curr_time)
+                            self.plot_x_data.append(self.pos_x)
+                            self.plot_y_data.append(self.pos_y)
+
+                            if len(self.plot_time_data) > self.max_plot_points:
+                                self.plot_time_data.pop(0)
+                                self.plot_x_data.pop(0)
+                                self.plot_y_data.pop(0)
+
+                            if dpg.does_item_exist("series_pos_x"):
+                                dpg.set_value("series_pos_x", [self.plot_time_data, self.plot_x_data])
+                                dpg.fit_axis_data("home_plot1_x")
+                                dpg.fit_axis_data("home_plot1_y")
+                            if dpg.does_item_exist("series_pos_y"):
+                                dpg.set_value("series_pos_y", [self.plot_time_data, self.plot_y_data])
+                                dpg.fit_axis_data("home_plot2_x")
+                                dpg.fit_axis_data("home_plot2_y")
 
                     except (ValueError, IndexError, AttributeError):
                         pass
