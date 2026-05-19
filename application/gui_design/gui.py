@@ -2114,18 +2114,7 @@ class GUI:
                 dpg.configure_item(stop_tag, enabled=is_running and not is_pending)
 
     def poll_pipe(self):
-        """Process messages from the worker processes.
-
-        Protocol:
-        ESP receives:
-        target_offset_x,target_offset_y,sniper,keys_to_send,current_speed
-
-        Logic:
-        - manual keyboard works always
-        - vision has priority only when it has a real target offset
-        - when vision is active, manual XY is blocked by sending keys="-"
-        - when vision has no target, manual keys are sent normally
-        """
+        """Process messages from the worker processes."""
 
         last_send_time = 0.0
         last_sent_command = None
@@ -2136,10 +2125,6 @@ class GUI:
         vision_has_target = False
 
         while self.running:
-            # =============================================================
-            # 1. VISION PIPE
-            # =============================================================
-
             latest_vision_msg = None
 
             while self.pipe.poll():
@@ -2166,10 +2151,6 @@ class GUI:
                         target_offset_x = 0
                         target_offset_y = 0
                         vision_has_target = False
-
-            # =============================================================
-            # 2. COMMS PIPE
-            # =============================================================
 
             while self.comms_pipe.poll():
                 msg = self.comms_pipe.recv()
@@ -2242,19 +2223,10 @@ class GUI:
                                 ),
                             )
 
-            # =============================================================
-            # 3. SEND COMMAND TO ESP32
-            # =============================================================
-            # To jest najważniejsza zmiana:
-            # wysyłamy komendę niezależnie od tego, czy przyszła ramka vision.
-            # Dzięki temu manual działa zawsze.
             target_detected = 0
             if self.is_connected:
                 now = time.time()
 
-                # Vision priority:
-                # Jeżeli vision ma aktywny cel, ESP dostaje offset i keys="-".
-                # Jeżeli vision nie ma celu, ESP dostaje manual keys.
                 if vision_has_target:
                     target_detected = 1 if vision_has_target else 0
                     keys_to_send = "-"
@@ -2268,8 +2240,6 @@ class GUI:
 
                 command = f"{send_x},{send_y},{sniper},{keys_to_send},{self.current_speed},{target_detected}"
 
-                # Wysyłamy gdy komenda się zmieniła albo cyklicznie co 20 ms.
-                # Dzięki temu manual jest responsywny, ale nie zalewasz seriala bez sensu.
                 if command != last_sent_command or (now - last_send_time) >= 0.02:
                     self.comms_pipe.send(
                         {
@@ -2287,10 +2257,6 @@ class GUI:
                             f"<GUI_SEND> {command} | dist={dist:.0f}px | vision={vision_has_target}",
                             flush=True
                         )
-
-            # =============================================================
-            # 4. SIM PIPE
-            # =============================================================
 
             while self.sim_pipe.poll():
                 msg = self.sim_pipe.recv()

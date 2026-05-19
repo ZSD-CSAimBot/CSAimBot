@@ -111,7 +111,7 @@ class AimBot:
             boxes_data_tensor: Tensor of detections in xyxy format with class ids.
         """
         if boxes_data_tensor is None or boxes_data_tensor.shape[0] == 0:
-            return False
+            return False, False     
 
         cls = boxes_data_tensor[:, 5]
         rifle_class_id = 3

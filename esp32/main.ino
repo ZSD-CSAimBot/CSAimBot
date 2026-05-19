@@ -1,15 +1,16 @@
 /*
- * CSAimBot Motor Control Firmware - MODIFIED SAFE WORKSPACE VERSION
- * ESP32-based controller for CoreXY robotic platform with Z-axis servo
- * Limit switches: Debounced, used for XY Homing and Safety. Z-limit ignored.
- * Workspace: Virtual software endstops set to 28cm X and 24cm Y from origin.
+ * CSAimBot motor control firmware - modified safe workspace version.
+ * ESP32-based controller for a CoreXY robotic platform with a Z-axis servo.
+ * Limit switches are debounced and used for XY homing and safety.
+ * The Z-limit is intentionally ignored in the default workspace logic.
+ * Virtual software endstops are configured to 28 cm on X and 24 cm on Y from the origin.
  */
 
 #include <ESP32Servo.h>
 #include <ESP32Encoder.h>
 
 // ============================================================================
-// PIN DEFINITIONS
+// Pin definitions.
 // ============================================================================
 
 #define PUL1_PIN 23
@@ -33,7 +34,7 @@
 #define LIMIT_Z_PIN 14
 
 // ============================================================================
-// NON-BLOCKING SERIAL BUFFER
+// Serial command buffer for emergency stop.
 // ============================================================================
 
 const int MAX_BUFFER_SIZE = 64;
@@ -43,7 +44,7 @@ bool isCommandReady = false;
 int targetDetected = 0;
 
 // ============================================================================
-// CONFIGURATION & STATE VARIABLES
+// Configurable parameters and state variables.
 // ============================================================================
 
 int delayCoreXY = 700;
@@ -54,7 +55,7 @@ bool motor1Running = false;
 bool motor2Running = false;
 bool motorZRunning = false;
 
-// Active movement tracking for continuous endstop monitoring
+// Tracks active movement for continuous endstop monitoring.
 bool isMovingUp = false;
 bool isMovingDown = false;
 bool isMovingLeft = false;
@@ -75,22 +76,22 @@ bool wasLimitZPressed = false;
 bool isZUp = false;
 
 // ============================================================================
-// ENCODER AXIS SIGN CALIBRATION
+// Encoder axis sign calibration.
 // ============================================================================
 //
-// Real behavior in this setup:
-// - moving left increases X
-// - moving right decreases X
-// - moving down increases Y
-// - moving up decreases Y
+// Actual motion mapping in this setup:
+// - Moving left increases X.
+// - Moving right decreases X.
+// - Moving down increases Y.
+// - Moving up decreases Y.
 //
-// If it behaves inversely, change SIGN_X or SIGN_Y from 1 to -1.
+// If the axes move in reverse, change SIGN_X or SIGN_Y from 1 to -1.
 
 const int SIGN_X = 1;
 const int SIGN_Y = -1;
 
 // ============================================================================
-// SERVO
+// Servo settings.
 // ============================================================================
 
 Servo mainServo;
@@ -105,12 +106,12 @@ bool isServoTimerActive = false;
 unsigned long lastLimitNotify = 0;
 
 // ============================================================================
-// VIRTUAL WORKSPACE LIMITS
+// Virtual workspace limits.
 // ============================================================================
 //
 // After homing and back-off:
-// X: from 0.00 cm to 24.50 cm
-// Y: from 0.00 cm to 28.50 cm
+// X ranges from 0.00 cm to 24.50 cm.
+// Y ranges from 0.00 cm to 28.50 cm.
 
 const float LIMIT_MIN_X = 0.00;
 const float LIMIT_MAX_X = 24.50;
@@ -119,14 +120,14 @@ const float LIMIT_MAX_Y = 28.50;
 const float LIMIT_MARGIN_CM = 0.30;
 
 // ============================================================================
-// AUTO RECOVERY SETTINGS
+// Auto-recovery settings.
 // ============================================================================
 //
-// When XY hits a software limit:
-// 1. Save current Z position.
-// 2. Lift Z quickly.
-// 3. Move XY to center at the same time.
-// 4. After half of XY path is completed, lower Z back to saved position.
+// When XY reaches a software limit:
+// 1. Save the current Z position.
+// 2. Raise Z quickly.
+// 3. Move XY toward the center at the same time.
+// 4. After half of the XY path is complete, lower Z back to the saved position.
 
 bool isAutoRecovering = false;
 
@@ -143,7 +144,7 @@ int posY = 0;
 String pressedKeys = "";
 
 // ============================================================================
-// VISION PID / P CONTROL SETTINGS
+// Vision PD control settings.
 // ============================================================================
 
 int targetOffsetPxX = 0;
@@ -156,13 +157,9 @@ bool visionControlActive = false;
 float visionTargetX = 0.0;
 float visionTargetY = 0.0;
 
-// Kalibracja: ile cm ruchu myszy odpowiada 1 pikselowi błędu na ekranie.
-// To trzeba dobrać testowo.
-float pxToCmX = 0.0021167;
-float pxToCmY = 0.0021167;
+float pxToCmX = 0.0021167; // to be calibrated based on eDPI (current 1200)
+float pxToCmY = 0.0021167; // ... = 1px * 2.54 / eDPI
 
-// Na start robimy P, bez I i bez D.
-// Jak będzie stabilne, można dodać delikatne D.
 float kpVision = 80.0;
 float kdVision = 3.0;
 
@@ -174,17 +171,14 @@ float filteredOffsetX = 0.0;
 float filteredOffsetY = 0.0;
 const float VISION_FILTER_ALPHA = 0.35;
 
-// Martwa strefa w pikselach — jak cel jest blisko środka, robot stoi.
 const int VISION_DEADZONE_PX_X = 7;
 const int VISION_DEADZONE_PX_Y = 7;
 
-// Martwa strefa pozycji w cm dla enkoderów.
 const float VISION_TARGET_TOLERANCE_CM = 0.01;
 
 
-
 // ============================================================================
-// VISION CENTERED EVENT SETTINGS
+// Vision-centered event tracking.
 // ============================================================================
 
 bool wasVisionCentered = false;
@@ -192,26 +186,26 @@ unsigned long lastVisionCenteredEventMs = 0;
 const unsigned long VISION_CENTERED_COOLDOWN_MS = 250;
 
 // ============================================================================
-// FIRE / RELAY1 RATE LIMIT
+// Fire control settings.
 // ============================================================================
 
-const unsigned long FIRE_HOLD_MS = 70;       // ile ms trzymać solenoid
-const unsigned long FIRE_GAP_MS = 300;       // minimalna przerwa między strzałami
+const unsigned long FIRE_HOLD_MS = 70;
+const unsigned long FIRE_GAP_MS = 250;
 
-bool fireRequestActive = false;              // czy aktualnie chcemy strzelać
-bool fireOutputActive = false;               // czy RELAY1 jest teraz HIGH
+bool fireRequestActive = false;
+bool fireOutputActive = false;
 
 unsigned long fireStartMs = 0;
 unsigned long lastFireEndMs = 0;
 
 // ============================================================================
-// FORWARD DECLARATIONS
+// Forward declarations of functions defined later in the code.
 // ============================================================================
 
 bool checkEmergencyStop();
 
 // ============================================================================
-// MOTOR CONTROL FUNCTIONS
+// Motor control helpers.
 // ============================================================================
 
 void stopAllMotors() {
@@ -252,7 +246,7 @@ void moveZ(int dirZ) {
 }
 
 // ============================================================================
-// DEBOUNCE HELPER FUNCTION
+// Debounce helper for limit switches.
 // ============================================================================
 
 bool isSwitchStablyPressed(int pin, unsigned long debounceTimeMs) {
@@ -272,7 +266,7 @@ bool isSwitchStablyPressed(int pin, unsigned long debounceTimeMs) {
 }
 
 // ============================================================================
-// POSITION UPDATE
+// Position calculation from encoders.
 // ============================================================================
 
 void updateEncoderPosition() {
@@ -287,7 +281,7 @@ void updateEncoderPosition() {
 }
 
 // ============================================================================
-// SOFTWARE LIMIT CHECKS
+// Software workspace limit check.
 // ============================================================================
 
 bool isOutsideWorkspace() {
@@ -300,7 +294,7 @@ bool isOutsideWorkspace() {
 }
 
 // ============================================================================
-// DEBUG PRINT
+// Debug output.
 // ============================================================================
 
 void printSoftLimitDebug(const char* limitName, const char* reason) {
@@ -376,7 +370,7 @@ void printSoftLimitDebug(const char* limitName, const char* reason) {
 }
 
 // ============================================================================
-// AUTO RECOVERY: LIFT Z + CENTER XY + RESTORE Z FROM HALF PATH
+// Auto-recovery: lift Z, center XY, and restore Z from half path.
 // ============================================================================
 
 void setXYDirectionToCenter(bool moveU, bool moveD, bool moveL, bool moveR) {
@@ -433,7 +427,7 @@ void stepZRecovery(bool zUpDirection) {
 }
 
 // ============================================================================
-// AUTO RECOVERY: LIFT Z -> CENTER XY -> DROP Z (SEQUENTIAL)
+// Auto-recovery: lift Z, center XY, then drop Z sequentially.
 // ============================================================================
 
 void autoLiftCenterAndRestoreZ(const char* reason) {
@@ -455,13 +449,8 @@ void autoLiftCenterAndRestoreZ(const char* reason) {
   stopAllMotors();
   delay(30);
 
-  // 1. Lift the mouse safely before any horizontal movement
   zLift();
-
-  // 2. Move XY to the center workspace position safely
   moveToCenter(100);
-
-  // 3. Drop the mouse back down to its working position
   zDrop();
 
   Serial.println();
@@ -474,7 +463,7 @@ void autoLiftCenterAndRestoreZ(const char* reason) {
 }
 
 // ============================================================================
-// CONTINUOUS SOFTWARE WORKSPACE LIMIT MONITOR
+// Continuous software workspace limit monitor.
 // ============================================================================
 
 void applyContinuousWorkspaceLimit() {
@@ -582,7 +571,7 @@ void blockMoveIfWouldExceedLimit(bool &moveUp, bool &moveDown, bool &moveLeft, b
 }
 
 // ============================================================================
-// EMERGENCY STOP HELPER
+// Emergency stop helper.
 // ============================================================================
 
 bool checkEmergencyStop() {
@@ -623,7 +612,7 @@ bool checkEmergencyStop() {
 }
 
 // ============================================================================
-// Z-AXIS CONTROL FUNCTIONS
+// Z-axis control functions.
 // ============================================================================
 
 void zLift() {
@@ -684,7 +673,7 @@ void zDrop() {
 }
 
 // ============================================================================
-// CENTERING FUNCTION
+// Centering function.
 // ============================================================================
 
 void moveToCenter(int speedDelay) {
@@ -751,7 +740,7 @@ void moveToCenter(int speedDelay) {
 }
 
 // ============================================================================
-// HOMING SEQUENCE
+// Homing sequence.
 // ============================================================================
 
 void performHoming() {
@@ -762,9 +751,7 @@ void performHoming() {
   int backoffSteps = (int)stepsPerCM;
   int debounceLimitMs = 50;
 
-  // ==========================================================================
-  // 1. Y-AXIS HOMING
-  // ==========================================================================
+  // Y-axis homing.
 
   Serial.println("Homing Y...");
 
@@ -802,9 +789,7 @@ void performHoming() {
 
   delay(200);
 
-  // ==========================================================================
-  // 2. X-AXIS HOMING
-  // ==========================================================================
+  // X-axis homing.
 
   Serial.println("Homing X...");
 
@@ -842,9 +827,7 @@ void performHoming() {
 
   delay(200);
 
-  // ==========================================================================
-  // RESET POSITION
-  // ==========================================================================
+  // Reset position.
 
   posX = 0;
   posY = 0;
@@ -867,7 +850,7 @@ void performHoming() {
 }
 
 // ============================================================================
-// SETUP
+// Setup.
 // ============================================================================
 
 void setup() {
@@ -988,7 +971,6 @@ void setDelayFromSpeedPercent(int speedPercent) {
 void applyVisionPControl() {
   updateEncoderPosition();
 
-  // Jeżeli cel jest już blisko środka ekranu, zatrzymaj XY.
   bool isVisionCenteredNow =
   abs(targetOffsetPxX) <= VISION_DEADZONE_PX_X &&
   abs(targetOffsetPxY) <= VISION_DEADZONE_PX_Y;
@@ -1005,32 +987,16 @@ void applyVisionPControl() {
 
     if (!wasVisionCentered &&
         nowMs - lastVisionCenteredEventMs >= VISION_CENTERED_COOLDOWN_MS) {
-
       Serial.println("VISION CENTERED EVENT");
-
       lastVisionCenteredEventMs = nowMs;
     }
-
     wasVisionCentered = true;
     return;
   }
 
   wasVisionCentered = false;
 
-  // ========================================================================
-  // PIXELS -> ROBOT TARGET POSITION
-  // ========================================================================
-  //
-  // Założenie:
-  // ekran X dodatni = cel po prawej -> mysz musi iść w prawo.
-  // U Ciebie fizycznie ruch w prawo zmniejsza currentPosX,
-  // więc target X = current X - offsetX * skala.
-  //
-  // ekran Y dodatni = cel niżej -> mysz musi iść w dół.
-  // U Ciebie ruch w dół zwiększa currentPosY,
-  // więc target Y = current Y + offsetY * skala.
-  //
-  // Jeśli GUI już odwraca Y, wtedy znak przy Y trzeba będzie zmienić.
+  // Convert the current pixel offset into a robot target position.
 
   filteredOffsetX = filteredOffsetX + VISION_FILTER_ALPHA * ((float)targetOffsetPxX - filteredOffsetX);
   filteredOffsetY = filteredOffsetY + VISION_FILTER_ALPHA * ((float)targetOffsetPxY - filteredOffsetY);
@@ -1038,7 +1004,6 @@ void applyVisionPControl() {
   visionTargetX = currentPosX - (filteredOffsetX * pxToCmX);
   visionTargetY = currentPosY - (filteredOffsetY * pxToCmY);
 
-  // Ogranicz target do obszaru roboczego, żeby PID nie próbował wyjechać poza ramę.
   if (visionTargetX < LIMIT_MIN_X + LIMIT_MARGIN_CM) visionTargetX = LIMIT_MIN_X + LIMIT_MARGIN_CM;
   if (visionTargetX > LIMIT_MAX_X - LIMIT_MARGIN_CM) visionTargetX = LIMIT_MAX_X - LIMIT_MARGIN_CM;
 
@@ -1048,16 +1013,13 @@ void applyVisionPControl() {
   float errorX = visionTargetX - currentPosX;
   float errorY = visionTargetY - currentPosY;
 
-  // Jeżeli fizycznie jesteśmy blisko pozycji docelowej, zatrzymaj.
   if (abs(errorX) <= VISION_TARGET_TOLERANCE_CM &&
       abs(errorY) <= VISION_TARGET_TOLERANCE_CM) {
     stopAllMotors();
     return;
   }
 
-  // ========================================================================
-  // P / PD OUTPUT
-  // ========================================================================
+  // Compute the PD output.
 
   unsigned long nowMicros = micros();
   float dt = 0.001;
@@ -1085,17 +1047,7 @@ void applyVisionPControl() {
   prevVisionErrorY = errorY;
   lastVisionPidMicros = nowMicros;
 
-  // ========================================================================
-  // OUTPUT -> DIRECTION
-  // ========================================================================
-  //
-  // currentPosX większe = bardziej w lewo.
-  // Jeśli outputX dodatni, target jest bardziej w lewo -> moveLeft.
-  // Jeśli outputX ujemny, target jest bardziej w prawo -> moveRight.
-  //
-  // currentPosY większe = bardziej w dół.
-  // Jeśli outputY dodatni -> moveDown.
-  // Jeśli outputY ujemny -> moveUp.
+  // Map the output to movement direction.
 
   float outputDeadband = 1.0;
 
@@ -1107,16 +1059,14 @@ void applyVisionPControl() {
 
   blockMoveIfWouldExceedLimit(moveUp, moveDown, moveLeft, moveRight);
 
-  // ========================================================================
-  // OUTPUT -> SPEED
-  // ========================================================================
+  // Map the output magnitude to speed.
 
   float magnitude = sqrt((outputX * outputX) + (outputY * outputY));
 
   int pidSpeed = (int)magnitude;
 
   if (pidSpeed > maxSpeedValue) pidSpeed = maxSpeedValue;
-  if (pidSpeed < 4) pidSpeed = 3;
+  if (pidSpeed < 4) pidSpeed = 4;
 
   if (maxSpeedValue <= 0 || pidSpeed <= 0) {
     stopAllMotors();
@@ -1130,7 +1080,6 @@ void applyVisionPControl() {
 void updateFireControl() {
   unsigned long nowMs = millis();
 
-  // 1. Jeżeli RELAY1 jest aktywny, wyłącz go po FIRE_HOLD_MS
   if (fireOutputActive) {
     if (nowMs - fireStartMs >= FIRE_HOLD_MS) {
       digitalWrite(RELAY1_PIN, LOW);
@@ -1143,19 +1092,16 @@ void updateFireControl() {
     return;
   }
 
-  // 2. Jeżeli nie ma żądania strzału, trzymamy LOW
   if (!fireRequestActive) {
     digitalWrite(RELAY1_PIN, LOW);
     return;
   }
 
-  // 3. Jeżeli jest żądanie strzału, ale cooldown jeszcze trwa, czekamy
   if (lastFireEndMs != 0 && (nowMs - lastFireEndMs < FIRE_GAP_MS)) {
     digitalWrite(RELAY1_PIN, LOW);
     return;
   }
 
-  // 4. Można strzelić
   digitalWrite(RELAY1_PIN, HIGH);
   fireOutputActive = true;
   fireStartMs = nowMs;
@@ -1164,14 +1110,12 @@ void updateFireControl() {
 }
 
 // ============================================================================
-// MAIN LOOP
+// Main loop.
 // ============================================================================
 
 void loop() {
 
-  // ==========================================================================
-  // 1. HARDWARE ENCODER POSITION CALCULATION
-  // ==========================================================================
+  // Hardware encoder position calculation.
 
   updateEncoderPosition();
 
@@ -1209,23 +1153,15 @@ void loop() {
     lastEncoderPrint = millis();
   }
 
-  // ==========================================================================
-  // 2. CONTINUOUS SOFTWARE WORKSPACE LIMIT MONITOR
-  // ==========================================================================
+  // Continuous software workspace limit monitor.
 
   applyContinuousWorkspaceLimit();
 
-  // ==========================================================================
-  // Z-AXIS LIMIT NOTE
-  // ==========================================================================
-  //
-  // Z limit is intentionally NOT checked with debounce in the main loop.
-  // Reason: when the Z endstop is physically pressed, XY must still be able
-  // to move normally. The Z limit is checked only when Z is moving UP.
+  // The Z limit is intentionally not checked with debounce in the main loop.
+  // This allows XY motion to continue normally when the Z endstop is physically pressed.
+  // The Z limit is checked only while Z is moving up.
 
-  // ==========================================================================
-  // 3. LIMIT SWITCH SAFETY & BOUNCE BACK
-  // ==========================================================================
+  // Limit switch safety and bounce-back.
 
   bool limitX = isSwitchStablyPressed(LIMIT_X_PIN, 90);
   bool limitY = isSwitchStablyPressed(LIMIT_Y_PIN, 90);
@@ -1293,18 +1229,14 @@ void loop() {
     delay(200);
   }
 
-  // ==========================================================================
-  // 4. SERVO AUTO-DETACH
-  // ==========================================================================
+  // Servo auto-detach.
 
   if (isServoTimerActive && (millis() - servoMoveStartTime >= 2000)) {
     mainServo.detach();
     isServoTimerActive = false;
   }
 
-  // ==========================================================================
-  // 5. SERIAL COMMAND RECEIVING
-  // ==========================================================================
+  // Serial command receiving.
   while (Serial.available() > 0 && !isCommandReady) {
     char incomingChar = Serial.read();
 
@@ -1319,9 +1251,7 @@ void loop() {
     }
   }
 
-  // ==========================================================================
-  // 6. COMMAND PARSING & EXECUTION
-  // ==========================================================================
+  // Command parsing and execution.
 
   if (isCommandReady) {
     String data = String(serialBuffer);
@@ -1379,10 +1309,10 @@ void loop() {
         }
 
         else {
-          bool moveUp = (pressedKeys.indexOf('i') >= 0);     // +Y command
-          bool moveDown = (pressedKeys.indexOf('k') >= 0);   // -Y command
-          bool moveLeft = (pressedKeys.indexOf('j') >= 0);   // -X command
-          bool moveRight = (pressedKeys.indexOf('l') >= 0);  // +X command
+          bool moveUp = (pressedKeys.indexOf('i') >= 0);     // Positive Y command.
+          bool moveDown = (pressedKeys.indexOf('k') >= 0);   // Negative Y command.
+          bool moveLeft = (pressedKeys.indexOf('j') >= 0);   // Negative X command.
+          bool moveRight = (pressedKeys.indexOf('l') >= 0);  // Positive X command.
 
           if (!moveUp && !moveDown && !moveLeft && !moveRight) {
             visionControlActive = true;
@@ -1402,23 +1332,16 @@ void loop() {
             }
           }
 
-          // ==================================================================
-          // Z AXIS
-          // ==================================================================
+          // Z axis.
 
           if (pressedKeys.indexOf('z') >= 0) {
-            // Z DOWN is always allowed.
             moveZ(HIGH);
           }
 
           else if (pressedKeys.indexOf('x') >= 0) {
-            // Z UP is blocked only while the Z endstop is pressed.
-            // XY movement is NOT stopped by this.
             if (digitalRead(LIMIT_Z_PIN) == LOW) {
               motorZRunning = false;
               digitalWrite(PULZ_PIN, LOW);
-              
-              // NEW: Reset Z position when limit is hit manually
               currentZSteps = 0;
               isZUp = true;
               
@@ -1432,9 +1355,7 @@ void loop() {
             motorZRunning = false;
           }
 
-          // ==================================================================
-          // SERVO
-          // ==================================================================
+          // Servo.
 
           if (pressedKeys.indexOf('v') >= 0 && (millis() - lastServoToggle > 500)) {
             servoState = !servoState;
@@ -1447,9 +1368,7 @@ void loop() {
             lastServoToggle = millis();
           }
 
-          // ==================================================================
-          // RELAYS
-          // ==================================================================
+          // Relays.
 
           bool manualFire = (pressedKeys.indexOf('1') >= 0);
           bool autoFire = false;
@@ -1471,25 +1390,18 @@ void loop() {
   }
 
   updateFireControl();
-  // ==========================================================================
-  // 7. STEP GENERATION
-  // ==========================================================================
+  // Step generation.
 
   if (!motor1Running && !motor2Running && !motorZRunning) {
     delay(1);
     return;
   }
 
-  // If Z is moving UP and the Z endstop becomes pressed, stop ONLY Z.
-  // Do not stop XY motors. This lets the robot keep moving left/right/up/down
-  // even with the Z limit switch pressed.
   if (motorZRunning && digitalRead(DIRZ_PIN) == LOW && digitalRead(LIMIT_Z_PIN) == LOW) {
     motorZRunning = false;
     digitalWrite(PULZ_PIN, LOW);
-
     currentZSteps = 0;
     isZUp = true;
-    
     Serial.println("Z LIMIT: Z motor stopped. XY still allowed.");
   }
 
