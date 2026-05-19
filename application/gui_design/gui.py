@@ -2159,19 +2159,19 @@ class GUI:
                         target_offset_y = 0
                         vision_has_target = False
 
-            curr_time = time.time() - self.start_time
-            dist = math.hypot(target_offset_x, target_offset_y)
-            self.plot_vision_time_data.append(curr_time)
-            self.plot_vision_dist_data.append(dist)
-            if len(self.plot_vision_time_data) > self.max_plot_points:
-                self.plot_vision_time_data.pop(0)
-                self.plot_vision_dist_data.pop(0)
-            
-            if dpg.does_item_exist("series_vision_dist"):
-                dpg.set_value("series_vision_dist", [self.plot_vision_time_data, self.plot_vision_dist_data])
-                dpg.fit_axis_data("control_plot_x")
-                dpg.fit_axis_data("control_plot_y")
+                curr_time = time.time() - self.start_time
+                dist = math.hypot(target_offset_x, target_offset_y)
+                self.plot_vision_time_data.append(curr_time)
+                self.plot_vision_dist_data.append(dist)
+                if len(self.plot_vision_time_data) > self.max_plot_points:
+                    self.plot_vision_time_data.pop(0)
+                    self.plot_vision_dist_data.pop(0)
 
+                if dpg.does_item_exist("series_vision_dist"):
+                    dpg.set_value("series_vision_dist", [self.plot_vision_time_data, self.plot_vision_dist_data])
+                    dpg.fit_axis_data("control_plot_x")
+                    dpg.fit_axis_data("control_plot_y")
+                    
             while self.comms_pipe.poll():
                 msg = self.comms_pipe.recv()
 
@@ -2228,7 +2228,7 @@ class GUI:
                                 dpg.set_value("series_pos_y", [self.plot_time_data, self.plot_y_data])
                                 dpg.fit_axis_data("home_plot2_x")
                                 dpg.fit_axis_data("home_plot2_y")
-
+                                
                     except (ValueError, IndexError, AttributeError):
                         pass
 
