@@ -63,6 +63,15 @@ class GUI:
         self.pid_last_time = time.time()
         self.current_scale = 1.0
 
+        # Data buffers for plotting X/Y positions and distance to target over time.
+        self.plot_x_data = []
+        self.plot_y_data = []
+        self.plot_time_data = []
+        self.plot_vision_dist_data = []
+        self.plot_vision_time_data = []
+        self.max_plot_points = 2000
+        self.start_time = time.time()
+
         # Dictionary for smart management of forced dimension responsiveness
         self.layout_elements = {}
 
@@ -80,8 +89,8 @@ class GUI:
             },
             "page_simulation": {
                 "label": "Simulation",
-                "active_tex": "tex_control",
-                "inactive_tex": "tex_control_inactive",
+                "active_tex": "tex_symulacja",
+                "inactive_tex": "tex_symulacja_inactive",
             },
             "page_stat": {
                 "label": "Statistics",
@@ -121,6 +130,9 @@ class GUI:
                 "homing": "Homing",
                 "centering": "Centering",
                 "plot_data": "Data",
+                "plot_data_x": "X Position",
+                "plot_data_y": "Y Position",
+                "plot_vision_dist": "Distance to Target",
                 "plot_vision": "Vision Data",
                 "speed": "Speed",
                 "stat_lmb_title": "LMB Clicked",
@@ -140,6 +152,8 @@ class GUI:
                 "stat_keys_title": "Keys pressed",
                 "stat_keys_desc": "Amount of key presses by a user",
                 "refresh": "Refresh",
+                "axis_time": "Time",
+                "axis_dist": "Distance",
             },
             "Polski": {
                 "nav_home": "Strona Główna",
@@ -165,6 +179,9 @@ class GUI:
                 "homing": "Homing",
                 "centering": "Centrowanie",
                 "plot_data": "Dane",
+                "plot_data_x": "Pozycja X",
+                "plot_data_y": "Pozycja Y",
+                "plot_vision_dist": "Dystans do celu",
                 "plot_vision": "Dane Wizyjne",
                 "speed": "Prędkość",
                 "stat_lmb_title": "Kliknięcia LPM",
@@ -184,6 +201,8 @@ class GUI:
                 "stat_keys_title": "Wciśnięte klawisze",
                 "stat_keys_desc": "Ilość klawiszy wciśniętych przez użytkownika",
                 "refresh": "Odśwież",
+                "axis_time": "Czas",
+                "axis_dist": "Dystans",
             },
         }
         dpg.create_context()
@@ -538,6 +557,8 @@ class GUI:
             load_and_add("icons/ikona_control_inactive.png", "tex_control_inactive")
             load_and_add("icons/ikona_stat_inactive.png", "tex_stat_inactive")
             load_and_add("icons/ikona_settings_inactive.png", "tex_settings_inactive")
+            load_and_add("icons/ikona_symulacja.png", "tex_symulacja")
+            load_and_add("icons/ikona_symulacja_inactive.png", "tex_symulacja_inactive")
             load_and_add("icons/connect/ikona_connect_red.png", "tex_conn_red")
             load_and_add(
                 "icons/connect/ikona_connect_red_full.png", "tex_conn_red_full"
@@ -713,11 +734,20 @@ class GUI:
             dpg.set_value(self.conn_text, text_val)
 
         if dpg.does_item_exist("plot_home_1"):
-            dpg.configure_item("plot_home_1", label=t["plot_data"])
+            dpg.configure_item("plot_home_1", label=t["plot_data_x"])
         if dpg.does_item_exist("plot_home_2"):
-            dpg.configure_item("plot_home_2", label=t["plot_data"])
+            dpg.configure_item("plot_home_2", label=t["plot_data_y"])
         if dpg.does_item_exist("plot_control"):
-            dpg.configure_item("plot_control", label=t["plot_vision"])
+            dpg.configure_item("plot_control", label=t["plot_vision_dist"])
+
+        if dpg.does_item_exist("home_plot1_x"):
+            dpg.configure_item("home_plot1_x", label=t["axis_time"])
+        if dpg.does_item_exist("home_plot2_x"):
+            dpg.configure_item("home_plot2_x", label=t["axis_time"])
+        if dpg.does_item_exist("control_plot_x"):
+            dpg.configure_item("control_plot_x", label=t["axis_time"])
+        if dpg.does_item_exist("control_plot_y"):
+            dpg.configure_item("control_plot_y", label=t["axis_dist"])
 
         if dpg.does_item_exist("speed_text_label_control") and dpg.does_item_exist(
             "slider_speed_control"
@@ -860,22 +890,11 @@ class GUI:
                                     width=520, height=300, tag=self.rs(520, 300)
                             ):
                                 with dpg.plot(
-                                        label="Dane", width=-1, height=-1, tag="plot_home_1"
+                                        label="X Position", width=-1, height=-1, tag="plot_home_1"
                                 ):
-                                    dpg.add_plot_axis(dpg.mvXAxis, tag="home_plot1_x")
-                                    dpg.add_plot_axis(dpg.mvYAxis, tag="home_plot1_y")
-
-                                    x_data_1 = sorted(
-                                        [random.uniform(50000, 60000) for _ in range(8)]
-                                    )
-                                    y_data_1 = [random.uniform(1, 7) for _ in range(8)]
-
-                                    dpg.add_line_series(
-                                        x_data_1, y_data_1, parent="home_plot1_y"
-                                    )
-                                    dpg.add_scatter_series(
-                                        x_data_1, y_data_1, parent="home_plot1_y"
-                                    )
+                                    dpg.add_plot_axis(dpg.mvXAxis, label="Time", tag="home_plot1_x")
+                                    dpg.add_plot_axis(dpg.mvYAxis, label="X", tag="home_plot1_y")
+                                    dpg.add_line_series([], [], parent="home_plot1_y", tag="series_pos_x")
 
                             dpg.add_spacer(width=20, tag=self.rs(w=20))
 
@@ -883,22 +902,11 @@ class GUI:
                                     width=520, height=300, tag=self.rs(520, 300)
                             ):
                                 with dpg.plot(
-                                        label="Dane", width=-1, height=-1, tag="plot_home_2"
+                                        label="Y Position", width=-1, height=-1, tag="plot_home_2"
                                 ):
-                                    dpg.add_plot_axis(dpg.mvXAxis, tag="home_plot2_x")
-                                    dpg.add_plot_axis(dpg.mvYAxis, tag="home_plot2_y")
-
-                                    x_data_2 = sorted(
-                                        [random.uniform(50000, 60000) for _ in range(8)]
-                                    )
-                                    y_data_2 = [random.uniform(1, 7) for _ in range(8)]
-
-                                    dpg.add_line_series(
-                                        x_data_2, y_data_2, parent="home_plot2_y"
-                                    )
-                                    dpg.add_scatter_series(
-                                        x_data_2, y_data_2, parent="home_plot2_y"
-                                    )
+                                    dpg.add_plot_axis(dpg.mvXAxis, label="Time", tag="home_plot2_x")
+                                    dpg.add_plot_axis(dpg.mvYAxis, label="Y", tag="home_plot2_y")
+                                    dpg.add_line_series([], [], parent="home_plot2_y", tag="series_pos_y")
 
                         dpg.add_spacer(height=40, tag=self.rs(h=40))
 
@@ -1023,17 +1031,15 @@ class GUI:
                                     width=560, height=300, tag=self.rs(560, 300)
                             ):
                                 with dpg.plot(
-                                        label="Dane Wizyjne",
+                                        label="Distance to Target",
                                         width=-1,
                                         height=-1,
                                         tag="plot_control",
                                 ):
-                                    dpg.add_plot_axis(dpg.mvXAxis, tag="control_plot_x")
-                                    dpg.add_plot_axis(dpg.mvYAxis, tag="control_plot_y")
+                                    dpg.add_plot_axis(dpg.mvXAxis, label="Time", tag="control_plot_x")
+                                    dpg.add_plot_axis(dpg.mvYAxis, label="Distance", tag="control_plot_y")
                                     dpg.add_line_series(
-                                        list(range(100)),
-                                        [math.cos(x / 10) for x in range(100)],
-                                        parent="control_plot_y",
+                                        [], [], parent="control_plot_y", tag="series_vision_dist"
                                     )
                             dpg.add_spacer(width=20, tag=self.rs(w=20))
                             with dpg.child_window(
@@ -2149,6 +2155,19 @@ class GUI:
                         self.target_offset_x = 0
                         self.target_offset_y = 0
 
+                curr_time = time.time() - self.start_time
+                dist = math.hypot(self.target_offset_x, self.target_offset_y)
+                self.plot_vision_time_data.append(curr_time)
+                self.plot_vision_dist_data.append(dist)
+                if len(self.plot_vision_time_data) > self.max_plot_points:
+                    self.plot_vision_time_data.pop(0)
+                    self.plot_vision_dist_data.pop(0)
+                
+                if dpg.does_item_exist("series_vision_dist"):
+                    dpg.set_value("series_vision_dist", [self.plot_vision_time_data, self.plot_vision_dist_data])
+                    dpg.fit_axis_data("control_plot_x")
+                    dpg.fit_axis_data("control_plot_y")
+
                 now = time.time()
                 if self.is_connected and not self.manual_keys:
                     if force_update or (now - last_vision_send > 0.05):
@@ -2243,6 +2262,25 @@ class GUI:
 
                             # Push the newly parsed physical coordinates to the UI
                             self._update_coords_display()
+                            
+                            curr_time = time.time() - self.start_time
+                            self.plot_time_data.append(curr_time)
+                            self.plot_x_data.append(self.pos_x)
+                            self.plot_y_data.append(self.pos_y)
+                            
+                            if len(self.plot_time_data) > self.max_plot_points:
+                                self.plot_time_data.pop(0)
+                                self.plot_x_data.pop(0)
+                                self.plot_y_data.pop(0)
+                                
+                            if dpg.does_item_exist("series_pos_x"):
+                                dpg.set_value("series_pos_x", [self.plot_time_data, self.plot_x_data])
+                                dpg.fit_axis_data("home_plot1_x")
+                                dpg.fit_axis_data("home_plot1_y")
+                            if dpg.does_item_exist("series_pos_y"):
+                                dpg.set_value("series_pos_y", [self.plot_time_data, self.plot_y_data])
+                                dpg.fit_axis_data("home_plot2_x")
+                                dpg.fit_axis_data("home_plot2_y")
                     except (ValueError, IndexError) as e:
                         # Silently ignore parsing errors from incomplete serial strings
                         pass
