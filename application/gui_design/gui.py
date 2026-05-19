@@ -1235,7 +1235,7 @@ class GUI:
                                         label="Gripper Test",
                                         width=216,
                                         height=45,
-                                        tag=self.rs(200, 45, tag="btn_gripper_control"),
+                                        tag=self.rs(216, 45, tag="btn_gripper_control"),
                                     )
                                     dpg.bind_item_theme(
                                         btn_gripper, self.gold_btn_theme
