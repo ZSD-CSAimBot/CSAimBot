@@ -160,11 +160,17 @@ float visionTargetY = 0.0;
 float pxToCmX = 0.0021167; // to be calibrated based on eDPI (current 1200)
 float pxToCmY = 0.0021167; // ... = 1px * 2.54 / eDPI
 
-float kpVision = 80.0;
-float kdVision = 3.0;
+float kpVision = 90.0;
+float kiVision = 5.0;
+float kdVision = 10.0;
 
 float prevVisionErrorX = 0.0;
 float prevVisionErrorY = 0.0;
+
+float integralErrorX = 0.0; // Accumulated integral error X
+float integralErrorY = 0.0; // Accumulated integral error Y
+const float maxIntegral = 50.0; // Anti-windup limit for integral term
+
 unsigned long lastVisionPidMicros = 0;
 
 float filteredOffsetX = 0.0;
@@ -979,6 +985,8 @@ void applyVisionPControl() {
     stopAllMotors();
     prevVisionErrorX = 0.0;
     prevVisionErrorY = 0.0;
+    integralErrorX = 0.0;
+    integralErrorY = 0.0;
     lastVisionPidMicros = 0;
     filteredOffsetX = 0.0;
     filteredOffsetY = 0.0;
@@ -1040,8 +1048,17 @@ void applyVisionPControl() {
   if (derivativeY > MAX_DERIVATIVE) derivativeY = MAX_DERIVATIVE;
   if (derivativeY < -MAX_DERIVATIVE) derivativeY = -MAX_DERIVATIVE;
 
-  float outputX = kpVision * errorX + kdVision * derivativeX;
-  float outputY = kpVision * errorY + kdVision * derivativeY;
+  integralErrorX += errorX * dt;
+  integralErrorY += errorY * dt;
+
+  if (integralErrorX > maxIntegral) integralErrorX = maxIntegral;
+  if (integralErrorX < -maxIntegral) integralErrorX = -maxIntegral;
+
+  if (integralErrorY > maxIntegral) integralErrorY = maxIntegral;
+  if (integralErrorY < -maxIntegral) integralErrorY = -maxIntegral;
+
+  float outputX = (kpVision * errorX) + (kiVision * integralErrorX) + (kdVision * derivativeX);
+  float outputY = (kpVision * errorY) + (kiVision * integralErrorY) + (kdVision * derivativeY);
 
   prevVisionErrorX = errorX;
   prevVisionErrorY = errorY;

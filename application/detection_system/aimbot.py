@@ -65,7 +65,7 @@ class AimBot:
         )
         self.best_target_position = (0, 0)
         self.shoot_threshold = 2
-        self.recoil_strength = 1
+        self.recoil_strength = 0
         self.recoil_control = False
         self.is_holding_sniper = False
         self.head_class_id = [1, 7]
@@ -234,7 +234,7 @@ class AimBot:
         if not self.capture_and_preprocess_frame():
             return
 
-        results = self.model(self.model_tensor,conf=0.50, verbose=False)
+        results = self.model(self.model_tensor,conf=0.35, verbose=False)
         torch.cuda.synchronize()
 
         if results[0].boxes is not None and len(results[0].boxes) > 0:
