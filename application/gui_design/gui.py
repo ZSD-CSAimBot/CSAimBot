@@ -12,7 +12,8 @@ import serial.tools.list_ports
 # X is the end stop near the motor.
 # Y is the carriage axis with the gripper.
 from utils.json_utils import StatsManager
-from calibration.map_echo import CSGOTelemetry
+#from calibration.map_echo import CSGOTelemetry
+from calibration.calibration import CalibrationRoutine
 
 class GUI:
     """Main Dear PyGui application wrapper."""
@@ -2086,10 +2087,11 @@ class GUI:
     def run_calibration(self):
         """Run the calibration process in a separate thread to avoid blocking the UI."""
         if self.is_connected:
-            calibration = CSGOTelemetry()
-            edpi = int(calibration.start_listening())
-            self.comms_pipe.send({"cmd": "SEND", "value": f"CALIBRATION,{edpi}"})
+            self.add_log("<Calibration> Initializing calibration routine...", color=[255, 255, 80])
+            cali_routine = CalibrationRoutine(self)
+            cali_routine.run()
         else:
+            self.add_log("<Calibration> Please connect to the ESP32 first.", color=[255, 80, 80])
             print("Please connect to the ESP32 and run calibration again.")
 
     def on_calibrate(self, sender=None, app_data=None):
