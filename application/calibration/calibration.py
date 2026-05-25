@@ -28,7 +28,8 @@ class CalibrationRoutine:
 
     def send_command(self, keys, override_speed=75):
         """Sends simulated key presses to the ESP32 via the comms pipe."""
-        command = f"0,0,0,{keys},{override_speed},0"
+        command = f"0,0,0,{keys},{override_speed},0,7,7"
+
         if self.gui.is_connected:
             self.gui.comms_pipe.send({"cmd": "SEND", "value": command})
 
@@ -293,7 +294,7 @@ class CalibrationRoutine:
         self.gui.calibration_angle = avg_theta_rad
         self.gui.calibration_dpi = avg_dpi
 
-        # Send command to ESP32 in format: CALIBRATION,eDPI,angle
+        # Send command to ESP32 in format: CALIBRATION,eDPI,skewAngle
         if self.gui.is_connected:
             command = f"CALIBRATION,{int(edpi)},{avg_theta_rad:.4f}"
             self.gui.comms_pipe.send({"cmd": "SEND", "value": command})

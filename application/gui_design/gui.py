@@ -14,6 +14,7 @@ import serial.tools.list_ports
 from utils.json_utils import StatsManager
 #from calibration.map_echo import CSGOTelemetry
 from calibration.calibration import CalibrationRoutine
+from utils.traj_log import TrajectoryLogger
 
 class GUI:
     """Main Dear PyGui application wrapper."""
@@ -37,6 +38,11 @@ class GUI:
         self.sidebar_expanded = False
         self.stats_manager = StatsManager()
         self._last_stats_refresh = 0
+
+        self.telemetry_enabled = False
+        self.is_recording_trajectory = False
+        self.trajectory_logger = TrajectoryLogger()
+        self.last_pressed_keys = ""
 
         self.is_connected = False
         self.connection_msg = (
@@ -2080,7 +2086,7 @@ class GUI:
             self.mouse_blocker_pipe.send({"cmd": "STOP"})
         if self.is_connected:
             self.comms_pipe.send(
-                {"cmd": "SEND", "value": f"0,0,{self.current_speed},p"}
+                {"cmd": "SEND", "value": f"0,0,0,p,{self.current_speed},0,7,7"}
             )
             self.add_log("<System> EMERGENCY STOP ACTIVATED", color=[255, 0, 0])
 
@@ -2136,6 +2142,9 @@ class GUI:
         sniper = 0
         vision_has_target = False
 
+        deadzone_x = 7
+        deadzone_y = 7
+
         while self.running:
             latest_vision_msg = None
 
@@ -2149,20 +2158,29 @@ class GUI:
                 y_val = latest_vision_msg.get("y")
                 sniper = 1 if latest_vision_msg.get("sniper") else 0
 
+                deadzone_x = int(latest_vision_msg.get("deadzone_x", 7))
+                deadzone_y = int(latest_vision_msg.get("deadzone_y", 7))
+
                 if x_val is None or y_val is None or x_val == "-" or y_val == "-":
                     target_offset_x = 0
                     target_offset_y = 0
                     vision_has_target = False
+
+                    deadzone_x = 7
+                    deadzone_y = 7
                 else:
                     try:
                         target_offset_x = int(x_val)
                         target_offset_y = -int(y_val)
-                        vision_has_target = (target_offset_x != 0 or target_offset_y != 0)
+                        vision_has_target = True
 
                     except (TypeError, ValueError):
                         target_offset_x = 0
                         target_offset_y = 0
                         vision_has_target = False
+
+                        deadzone_x = 7
+                        deadzone_y = 7
 
                 curr_time = time.time() - self.start_time
                 dist = math.hypot(target_offset_x, target_offset_y)
@@ -2193,6 +2211,21 @@ class GUI:
                     if dpg.does_item_exist("current_keys_text"):
                         dpg.set_value("current_keys_text", display_text)
 
+                    if "/" in keys and "/" not in self.last_pressed_keys:
+                        self.telemetry_enabled = not self.telemetry_enabled
+                        state_str = "ON" if self.telemetry_enabled else "OFF"
+                        self.add_log(f"<Telemetry> Recording mode: {state_str}", color=[255, 255, 80])
+
+                        if self.telemetry_enabled:
+                            self.is_recording_trajectory = True
+                            self.trajectory_logger.start_recording(0, 0, self.pos_x, self.pos_y)
+                        else:
+                            self.is_recording_trajectory = False
+                            saved_file = self.trajectory_logger.save_to_json()
+                            if saved_file:
+                                self.add_log(f"<Telemetry> Saved: {os.path.basename(saved_file)}", color=[80, 255, 80])
+                    self.last_pressed_keys = keys
+
                 elif msg.get("type") == "esp_msg":
                     esp_text = msg.get("value")
                     print(f"<ESP32> {esp_text}", flush=True)
@@ -2214,6 +2247,8 @@ class GUI:
                                     self.pos_z = float(part.split(":")[1].strip())
 
                             self._update_coords_display()
+                            if self.is_recording_trajectory:
+                                self.trajectory_logger.add_point(time.time(), self.pos_x, self.pos_y)
 
                             curr_time = time.time() - self.start_time
                             self.plot_time_data.append(curr_time)
@@ -2233,7 +2268,7 @@ class GUI:
                                 dpg.set_value("series_pos_y", [self.plot_time_data, self.plot_y_data])
                                 dpg.fit_axis_data("home_plot2_x")
                                 dpg.fit_axis_data("home_plot2_y")
-                                
+
                     except (ValueError, IndexError, AttributeError):
                         pass
 
@@ -2270,6 +2305,8 @@ class GUI:
             target_detected = 0
             if self.is_connected:
                 now = time.time()
+                if vision_has_target and self.is_recording_trajectory:
+                    self.trajectory_logger.update_target(target_offset_x, target_offset_y)
 
                 if vision_has_target:
                     target_detected = 1 if vision_has_target else 0
@@ -2282,7 +2319,10 @@ class GUI:
                     send_y = 0
                     sniper = 0
 
-                command = f"{send_x},{send_y},{sniper},{keys_to_send},{self.current_speed},{target_detected}"
+                command = (
+                    f"{send_x},{send_y},{sniper},{keys_to_send},"
+                    f"{self.current_speed},{target_detected},{deadzone_x},{deadzone_y}"
+                )
 
                 if command != last_sent_command or (now - last_send_time) >= 0.02:
                     self.comms_pipe.send(
@@ -2409,7 +2449,7 @@ class GUI:
 
             if current_key:
                 if current_key != last_sent_key or current_key in ("i", "j", "k", "l"):
-                    command = f"0,0,0,{current_key},{self.current_speed},0"
+                    command = f"0,0,0,{current_key},{self.current_speed},0,7,7"
                     print(f"<GUI_SEND> {command}", flush=True)
                     
                     if self.is_connected:

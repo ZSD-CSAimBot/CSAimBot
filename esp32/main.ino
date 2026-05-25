@@ -172,6 +172,16 @@ float kpVision = 90.0;
 float kiVision = 5.0;
 float kdVision = 10.0;
 
+// Speed mapping constants for applyVisionPControl().
+// SPEED_SQRT_SCALE : sqrt(PID magnitude) * scale → speed % (aggressive zone).
+//   15.0 gives: 15px→25%, 50px→37%, 100px→65%, 200px→capped.
+// BRAKE_ZONE_PX   : pixel-error threshold below which the braking zone activates.
+// MIN_BRAKE_SPEED : speed floor inside the braking zone — keeps strafe tracking
+//   alive even at point-blank range without causing oscillations.
+const float SPEED_SQRT_SCALE = 15.0;
+const float BRAKE_ZONE_PX    = 40.0;
+const float MIN_BRAKE_SPEED  = 12.0;
+
 float prevVisionErrorX = 0.0;
 float prevVisionErrorY = 0.0;
 
@@ -1089,14 +1099,53 @@ void applyVisionPControl() {
 
   blockMoveIfWouldExceedLimit(moveUp, moveDown, moveLeft, moveRight);
 
-  // Map the output magnitude to speed.
+  // -----------------------------------------------------------------------
+  // Two-zone speed mapping — prevents overshoot and oscillations.
+  //
+  // filteredPxMag is used as the zone selector (filtered, not raw, so a
+  // single noisy frame cannot trigger a premature zone switch).
+  //
+  //  AGGRESSIVE ZONE  (filteredPxMag > BRAKE_ZONE_PX = 40 px)
+  //    Speed = sqrt(PID magnitude) × SPEED_SQRT_SCALE
+  //    Nonlinear: far errors get full speed, the curve compresses gently.
+  //    No speed floor other than the global min of 5%.
+  //
+  //  BRAKING ZONE  (filteredPxMag ≤ 40 px)
+  //    A linearly shrinking CAP is imposed:
+  //      cap = maxSpeedValue  at the zone boundary (40 px)
+  //      cap = MIN_BRAKE_SPEED at the deadzone edge
+  //    pidSpeed is clamped to this cap from above.
+  //    The MIN_BRAKE_SPEED floor (12%) ensures a strafing target can still
+  //    be tracked even at point-blank range without stopping dead.
+  //    Higher kdVision (20) provides additional derivative-based braking
+  //    when the bot is closing in quickly, working in parallel with the cap.
+  //
+  // Why this eliminates oscillations:
+  //   The previous code allowed ~40–45 % speed at 15 px, causing the robot
+  //   to overshoot the target by ~50 px per update frame.  The braking zone
+  //   caps speed to ≈25 % at 15 px and ≈12 % at 8 px, limiting overshoot
+  //   to at most one deadzone-width per frame.
+  // -----------------------------------------------------------------------
 
-  float magnitude = sqrt((outputX * outputX) + (outputY * outputY));
+  float magnitude = sqrtf((outputX * outputX) + (outputY * outputY));
+  int pidSpeed = (int)(sqrtf(magnitude) * SPEED_SQRT_SCALE);
 
-  int pidSpeed = (int)magnitude;
+  float filteredPxMag = sqrtf(filteredOffsetX * filteredOffsetX +
+                               filteredOffsetY * filteredOffsetY);
+
+  if (filteredPxMag <= BRAKE_ZONE_PX) {
+    float span      = BRAKE_ZONE_PX - (float)VISION_DEADZONE_PX_X;
+    float brakeRatio = (filteredPxMag - (float)VISION_DEADZONE_PX_X) / span;
+    if (brakeRatio < 0.0f) brakeRatio = 0.0f;
+    if (brakeRatio > 1.0f) brakeRatio = 1.0f;
+
+    int brakeCap = (int)(MIN_BRAKE_SPEED + brakeRatio * ((float)maxSpeedValue - MIN_BRAKE_SPEED));
+    if (pidSpeed > brakeCap) pidSpeed = brakeCap;
+    if (pidSpeed < (int)MIN_BRAKE_SPEED) pidSpeed = (int)MIN_BRAKE_SPEED;
+  }
 
   if (pidSpeed > maxSpeedValue) pidSpeed = maxSpeedValue;
-  if (pidSpeed < 4) pidSpeed = 4;
+  if (pidSpeed < 5) pidSpeed = 5;
 
   if (maxSpeedValue <= 0 || pidSpeed <= 0) {
     stopAllMotors();
@@ -1300,11 +1349,15 @@ void loop() {
         int calibrated_edpi = data.substring(firstComma + 1, secondComma).toInt();
         skewAngleRad = data.substring(secondComma + 1).toFloat();
 
-        pxToCmX = 1.0 * 2.54 / calibrated_edpi;
-        pxToCmY = 1.0 * 2.54 / calibrated_edpi;
+        if (calibrated_edpi > 0) {
+          pxToCmX = 2.54f / calibrated_edpi;
+          pxToCmY = 2.54f / calibrated_edpi;
+        }
 
         Serial.print("Calibration saved! eDPI: ");
         Serial.print(calibrated_edpi);
+        Serial.print(" | pxToCm: ");
+        Serial.print(pxToCmX, 6);
         Serial.print(" | Skew Angle (rad): ");
         Serial.println(skewAngleRad, 4);
       }
