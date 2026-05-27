@@ -71,6 +71,9 @@ class AimBot:
         self.head_class_id = [1, 7]
         self.body_class_id = [0, 6]
 
+        self.target_deadzone_x = 7
+        self.target_deadzone_y = 7
+
     def capture_and_preprocess_frame(self):
         """Grab a frame from the camera and copy it into the model tensor."""
         dl_tensor = self.camera.grab_gpu_tensor()
@@ -126,6 +129,8 @@ class AimBot:
         3. Within selected group, choose the closest to screen center
         """
         if boxes_data_tensor is None or boxes_data_tensor.shape[0] == 0:
+            self.target_deadzone_x = 7
+            self.target_deadzone_y = 7
             return None, None
 
         cls = boxes_data_tensor[:, 5]
@@ -154,6 +159,8 @@ class AimBot:
             selected_boxes = body_boxes
             target_type = "BODY"
         else:
+            self.target_deadzone_x = 7
+            self.target_deadzone_y = 7
             return None, None
 
         centers_x = (selected_boxes[:, 0] + selected_boxes[:, 2]) / 2.0
@@ -168,8 +175,16 @@ class AimBot:
         offset_x = int(round(offsets_x[best_idx].item()))
         offset_y = int(round(offsets_y[best_idx].item()))
 
+        best_box = selected_boxes[best_idx]
+        box_width = best_box[2] - best_box[0]
+        box_height = best_box[3] - best_box[1]
+
+        self.target_deadzone_x = max(7, int(round(box_width.item() / 2.0)))
+        self.target_deadzone_y = max(7, int(round(box_height.item() / 2.0)))
+
         print(
-            f"<TARGET_SELECT> type={target_type} x={offset_x} y={offset_y}",
+            f"<TARGET_SELECT> type={target_type} x={offset_x} y={offset_y} "
+            f"deadzoneX={self.target_deadzone_x} deadzoneY={self.target_deadzone_y}",
             flush=True
         )
 
@@ -251,6 +266,8 @@ class AimBot:
         else:
             self.recoil_control = False
             self.best_target_position = ("-", "-")
+            self.target_deadzone_x = 7
+            self.target_deadzone_y = 7
             if self.show_debug_window:
                 self.display_results(None)
 
@@ -311,7 +328,14 @@ def vision_worker(pipe_conn, model_path, target_fps):
                 try:
                     offset_x = aimbot.best_target_position[0]
                     offset_y = aimbot.best_target_position[1]
-                    pipe_conn.send({"type": "offsets", "x": offset_x, "y": offset_y, "sniper": aimbot.is_holding_sniper})
+                    pipe_conn.send({
+                        "type": "offsets",
+                        "x": offset_x,
+                        "y": offset_y,
+                        "sniper": aimbot.is_holding_sniper,
+                        "deadzone_x": aimbot.target_deadzone_x,
+                        "deadzone_y": aimbot.target_deadzone_y
+                    })
                 except Exception as e:
                     print(e)
                     pass

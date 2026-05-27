@@ -211,7 +211,8 @@ class KeyboardInputModule:
             "c", # center
             "u", # z-up
             "o", # z-down
-            ']'  # calibration
+            ']',  # calibration
+            '/'  # testing
         ]
         self.estop_key = estop_key
         self.pressed_keys = set()

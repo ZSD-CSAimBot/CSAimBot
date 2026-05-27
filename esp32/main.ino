@@ -69,6 +69,7 @@ float currentPosY = 0.0;
 unsigned long lastEncoderPrint = 0;
 
 float stepsPerCM = 296.30;
+float skewAngleRad = 0.0;
 
 long currentZSteps = 0;
 long stepsForZDrop = 5800;
@@ -142,6 +143,13 @@ const unsigned long MAX_RECOVERY_TIME_MS = 12000;
 int posX = 0;
 int posY = 0;
 String pressedKeys = "";
+bool isManualJogging = false;
+float jogVM1 = 0.0;
+float jogVM2 = 0.0;
+int jogDirM1 = LOW;
+int jogDirM2 = LOW;
+float manualAccumM1 = 0.0;
+float manualAccumM2 = 0.0;
 
 // ============================================================================
 // Vision PD control settings.
@@ -163,6 +171,16 @@ float pxToCmY = 0.0021167; // ... = 1px * 2.54 / eDPI
 float kpVision = 90.0;
 float kiVision = 5.0;
 float kdVision = 10.0;
+
+// Speed mapping constants for applyVisionPControl().
+// SPEED_SQRT_SCALE : sqrt(PID magnitude) * scale → speed % (aggressive zone).
+//   15.0 gives: 15px→25%, 50px→37%, 100px→65%, 200px→capped.
+// BRAKE_ZONE_PX   : pixel-error threshold below which the braking zone activates.
+// MIN_BRAKE_SPEED : speed floor inside the braking zone — keeps strafe tracking
+//   alive even at point-blank range without causing oscillations.
+const float SPEED_SQRT_SCALE = 15.0;
+const float BRAKE_ZONE_PX    = 40.0;
+const float MIN_BRAKE_SPEED  = 12.0;
 
 float prevVisionErrorX = 0.0;
 float prevVisionErrorY = 0.0;
@@ -1009,8 +1027,13 @@ void applyVisionPControl() {
   filteredOffsetX = filteredOffsetX + VISION_FILTER_ALPHA * ((float)targetOffsetPxX - filteredOffsetX);
   filteredOffsetY = filteredOffsetY + VISION_FILTER_ALPHA * ((float)targetOffsetPxY - filteredOffsetY);
 
-  visionTargetX = currentPosX - (filteredOffsetX * pxToCmX);
-  visionTargetY = currentPosY - (filteredOffsetY * pxToCmY);
+  float compAngle = -skewAngleRad;
+
+  float rotatedOffsetX = (filteredOffsetX * cos(compAngle)) - (filteredOffsetY * sin(compAngle));
+  float rotatedOffsetY = (filteredOffsetX * sin(compAngle)) + (filteredOffsetY * cos(compAngle));
+
+  visionTargetX = currentPosX - (rotatedOffsetX * pxToCmX);
+  visionTargetY = currentPosY - (rotatedOffsetY * pxToCmY);
 
   if (visionTargetX < LIMIT_MIN_X + LIMIT_MARGIN_CM) visionTargetX = LIMIT_MIN_X + LIMIT_MARGIN_CM;
   if (visionTargetX > LIMIT_MAX_X - LIMIT_MARGIN_CM) visionTargetX = LIMIT_MAX_X - LIMIT_MARGIN_CM;
@@ -1076,14 +1099,53 @@ void applyVisionPControl() {
 
   blockMoveIfWouldExceedLimit(moveUp, moveDown, moveLeft, moveRight);
 
-  // Map the output magnitude to speed.
+  // -----------------------------------------------------------------------
+  // Two-zone speed mapping — prevents overshoot and oscillations.
+  //
+  // filteredPxMag is used as the zone selector (filtered, not raw, so a
+  // single noisy frame cannot trigger a premature zone switch).
+  //
+  //  AGGRESSIVE ZONE  (filteredPxMag > BRAKE_ZONE_PX = 40 px)
+  //    Speed = sqrt(PID magnitude) × SPEED_SQRT_SCALE
+  //    Nonlinear: far errors get full speed, the curve compresses gently.
+  //    No speed floor other than the global min of 5%.
+  //
+  //  BRAKING ZONE  (filteredPxMag ≤ 40 px)
+  //    A linearly shrinking CAP is imposed:
+  //      cap = maxSpeedValue  at the zone boundary (40 px)
+  //      cap = MIN_BRAKE_SPEED at the deadzone edge
+  //    pidSpeed is clamped to this cap from above.
+  //    The MIN_BRAKE_SPEED floor (12%) ensures a strafing target can still
+  //    be tracked even at point-blank range without stopping dead.
+  //    Higher kdVision (20) provides additional derivative-based braking
+  //    when the bot is closing in quickly, working in parallel with the cap.
+  //
+  // Why this eliminates oscillations:
+  //   The previous code allowed ~40–45 % speed at 15 px, causing the robot
+  //   to overshoot the target by ~50 px per update frame.  The braking zone
+  //   caps speed to ≈25 % at 15 px and ≈12 % at 8 px, limiting overshoot
+  //   to at most one deadzone-width per frame.
+  // -----------------------------------------------------------------------
 
-  float magnitude = sqrt((outputX * outputX) + (outputY * outputY));
+  float magnitude = sqrtf((outputX * outputX) + (outputY * outputY));
+  int pidSpeed = (int)(sqrtf(magnitude) * SPEED_SQRT_SCALE);
 
-  int pidSpeed = (int)magnitude;
+  float filteredPxMag = sqrtf(filteredOffsetX * filteredOffsetX +
+                               filteredOffsetY * filteredOffsetY);
+
+  if (filteredPxMag <= BRAKE_ZONE_PX) {
+    float span      = BRAKE_ZONE_PX - (float)VISION_DEADZONE_PX_X;
+    float brakeRatio = (filteredPxMag - (float)VISION_DEADZONE_PX_X) / span;
+    if (brakeRatio < 0.0f) brakeRatio = 0.0f;
+    if (brakeRatio > 1.0f) brakeRatio = 1.0f;
+
+    int brakeCap = (int)(MIN_BRAKE_SPEED + brakeRatio * ((float)maxSpeedValue - MIN_BRAKE_SPEED));
+    if (pidSpeed > brakeCap) pidSpeed = brakeCap;
+    if (pidSpeed < (int)MIN_BRAKE_SPEED) pidSpeed = (int)MIN_BRAKE_SPEED;
+  }
 
   if (pidSpeed > maxSpeedValue) pidSpeed = maxSpeedValue;
-  if (pidSpeed < 4) pidSpeed = 4;
+  if (pidSpeed < 5) pidSpeed = 5;
 
   if (maxSpeedValue <= 0 || pidSpeed <= 0) {
     stopAllMotors();
@@ -1280,9 +1342,25 @@ void loop() {
       bufferIndex = 0;
     }
     else if (data.substring(0, 11) == "CALIBRATION") {
-      int calibrated_edpi = data.substring(12).toInt();
-      pxToCmX = 1.0 * 2.54 / calibrated_edpi;
-      pxToCmY = 1.0 * 2.54 / calibrated_edpi;
+      int firstComma = data.indexOf(',', 11);
+      int secondComma = data.indexOf(',', firstComma + 1);
+
+      if (firstComma > 0 && secondComma > 0) {
+        int calibrated_edpi = data.substring(firstComma + 1, secondComma).toInt();
+        skewAngleRad = data.substring(secondComma + 1).toFloat();
+
+        if (calibrated_edpi > 0) {
+          pxToCmX = 2.54f / calibrated_edpi;
+          pxToCmY = 2.54f / calibrated_edpi;
+        }
+
+        Serial.print("Calibration saved! eDPI: ");
+        Serial.print(calibrated_edpi);
+        Serial.print(" | pxToCm: ");
+        Serial.print(pxToCmX, 6);
+        Serial.print(" | Skew Angle (rad): ");
+        Serial.println(skewAngleRad, 4);
+      }
     }
     else if (data.length() > 0) {
       int commaIndexes[5] = {0, 0, 0, 0, 0};
@@ -1295,7 +1373,7 @@ void loop() {
           }
         }
       }
-      
+
       if (commaIndex == 5) {
         targetOffsetPxX = data.substring(0, commaIndexes[0]).toInt();
         targetOffsetPxY = data.substring(commaIndexes[0] + 1, commaIndexes[1]).toInt();
@@ -1331,26 +1409,69 @@ void loop() {
         }
 
         else {
-          bool moveUp = (pressedKeys.indexOf('i') >= 0);     // Positive Y command.
-          bool moveDown = (pressedKeys.indexOf('k') >= 0);   // Negative Y command.
-          bool moveLeft = (pressedKeys.indexOf('j') >= 0);   // Negative X command.
-          bool moveRight = (pressedKeys.indexOf('l') >= 0);  // Positive X command.
+          bool rawUp = (pressedKeys.indexOf('i') >= 0);
+          bool rawDown = (pressedKeys.indexOf('k') >= 0);
+          bool rawLeft = (pressedKeys.indexOf('j') >= 0);
+          bool rawRight = (pressedKeys.indexOf('l') >= 0);
 
-          if (!moveUp && !moveDown && !moveLeft && !moveRight) {
+          if (!rawUp && !rawDown && !rawLeft && !rawRight) {
             visionControlActive = true;
+            isManualJogging = false;
             applyVisionPControl();
-            
+
           } else {
             visionControlActive = false;
-
+            isManualJogging = true;
             updateEncoderPosition();
-            blockMoveIfWouldExceedLimit(moveUp, moveDown, moveLeft, moveRight);
 
-            if (maxSpeedValue <= 0) {
-              stopAllMotors();
+            // 1. Zdefiniowanie wektora bazowego (z klawiszy)
+            float manX = 0.0;
+            float manY = 0.0;
+            if (rawLeft) manX = -1.0;
+            if (rawRight) manX = 1.0;
+            if (rawUp) manY = -1.0;
+            if (rawDown) manY = 1.0;
+
+            // 2. Obrót wektora o wykalibrowany kąt skrzywienia myszki
+            float compAngle = -skewAngleRad;
+            float rotX = (manX * cos(compAngle)) - (manY * sin(compAngle));
+            float rotY = (manX * sin(compAngle)) + (manY * cos(compAngle));
+
+            // 3. Transformacja kinematyczna CoreXY
+            float vM1 = rotX - rotY;
+            float vM2 = rotX + rotY;
+
+            // Normalizacja prędkości tak, aby główny silnik działał na 100% zadanego maxSpeedValue
+            float maxV = max(abs(vM1), abs(vM2));
+            if (maxV > 0.0) {
+                vM1 /= maxV;
+                vM2 /= maxV;
+            }
+
+            jogVM1 = abs(vM1);
+            jogVM2 = abs(vM2);
+            jogDirM1 = (vM1 >= 0) ? HIGH : LOW;
+            jogDirM2 = (vM2 >= 0) ? HIGH : LOW;
+
+            isMovingRight = (rotX > 0);
+            isMovingLeft  = (rotX < 0);
+            isMovingDown  = (rotY > 0);
+            isMovingUp    = (rotY < 0);
+
+            bool mUp = isMovingUp, mDown = isMovingDown, mLeft = isMovingLeft, mRight = isMovingRight;
+            blockMoveIfWouldExceedLimit(mUp, mDown, mLeft, mRight);
+
+            // Jeśli ruch uderza w wirtualną ścianę - zatrzymaj manualne przesuwanie
+            if ((!mUp && isMovingUp) || (!mDown && isMovingDown) || (!mLeft && isMovingLeft) || (!mRight && isMovingRight)) {
+                isManualJogging = false;
+                stopAllMotors();
             } else {
-              setDelayFromSpeedPercent(maxSpeedValue);
-              applyCoreXYMovement(moveUp, moveDown, moveLeft, moveRight);
+                if (maxSpeedValue <= 0) {
+                    isManualJogging = false;
+                    stopAllMotors();
+                } else {
+                    setDelayFromSpeedPercent(maxSpeedValue);
+                }
             }
           }
 
@@ -1366,7 +1487,7 @@ void loop() {
               digitalWrite(PULZ_PIN, LOW);
               currentZSteps = 0;
               isZUp = true;
-              
+
               Serial.println("Z LIMIT: UP blocked. Z position reset to 0. XY still allowed.");
             } else {
               moveZ(LOW);
@@ -1413,6 +1534,25 @@ void loop() {
 
   updateFireControl();
   // Step generation.
+  if (isManualJogging) {
+    manualAccumM1 += jogVM1;
+    manualAccumM2 += jogVM2;
+
+    motor1Running = false;
+    motor2Running = false;
+
+    // Jeżeli akumulator osiągnie próg 1.0, uwalniamy fizyczny krok dla danego silnika
+    if (manualAccumM1 >= 1.0) {
+      motor1Running = true;
+      manualAccumM1 -= 1.0;
+      digitalWrite(DIR1_PIN, jogDirM1);
+    }
+    if (manualAccumM2 >= 1.0) {
+      motor2Running = true;
+      manualAccumM2 -= 1.0;
+      digitalWrite(DIR2_PIN, jogDirM2);
+    }
+  }
 
   if (!motor1Running && !motor2Running && !motorZRunning) {
     delay(1);
@@ -1429,7 +1569,7 @@ void loop() {
 
   int currentDelay = (motorZRunning) ? delayZ : delayCoreXY;
 
-  if (!motorZRunning && (motor1Running != motor2Running)) {
+  if (!motorZRunning && (motor1Running != motor2Running) && !isManualJogging) {
     currentDelay = (int)(currentDelay * 0.707);
   }
 
