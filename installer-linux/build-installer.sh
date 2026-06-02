@@ -130,13 +130,15 @@ chmod +x /usr/share/applications/csaimbot.desktop
 echo -e "\n${YELLOW}=== Operacje poinstalacyjne ===${NC}"
 
 # Skrypt automatycznie szuka gazebo_sim.tar w skopiowanych plikach (odporność na ukrytą strukturę PyInstallera)
-GAZEBO_TAR=$(find "$INSTALL_DIR" -name "gazebo_sim.tar" | head -n 1)
+GAZEBO_TAR="$INSTALL_DIR/_internal/application/simulation/gazebo_sim.tar"
 
-if [ -n "$GAZEBO_TAR" ]; then
-    echo -e "${CYAN}Wczytywanie obrazu Gazebo do Dockera ($GAZEBO_TAR)...${NC}"
+if [ -f "$GAZEBO_TAR" ]; then
+    echo -e "${CYAN}Wczytywanie obrazu Gazebo do Dockera...${NC}"
     sudo -u $REAL_USER docker load -i "$GAZEBO_TAR"
 else
-    echo -e "${RED}OSTRZEŻENIE: Nie znaleziono pliku gazebo_sim.tar! Pominięto konfigurację symulatora.${NC}"
+    echo -e "${RED}OSTRZEŻENIE: Nie znaleziono pliku gazebo_sim.tar w spodziewanej ścieżce!${NC}"
+    echo -e "${YELLOW}(Szukano w: $GAZEBO_TAR)${NC}"
+    echo -e "${RED}Pominięto konfigurację symulatora.${NC}"
 fi
 
 echo -e "${CYAN}Eksportowanie modelu YOLO do formatu TensorRT (może to potrwać chwilę)...${NC}"
