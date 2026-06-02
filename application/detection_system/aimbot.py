@@ -28,7 +28,15 @@ class AimBot:
 
     def prepare_camera(self):
         """Configure the capture region and camera provider."""
-        monitor = next(m for m in get_monitors() if m.is_primary)
+        monitors = get_monitors()
+        monitor = next((m for m in monitors if m.is_primary), None)
+
+        if monitor is None and len(monitors) > 0:
+            monitor = monitors[0]
+
+        if monitor is None:
+            print("ERROR: Did not detect any monitors. Ensure at least one monitor is connected.")
+            return
 
         SCREEN_WIDTH = monitor.width
         SCREEN_HEIGHT = monitor.height
