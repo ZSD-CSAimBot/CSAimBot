@@ -137,10 +137,11 @@ def comms_worker(conn):
     """
     esp = SerialCommsModule()
     keyboard = KeyboardInputModule()
-    last_keys = None
+    last_keys = ""
     last_send_time = 0.0
     is_connected = False
     running = True
+    pressed_keys_set = set()  # Track which keys are currently pressed
 
     while running:
         while conn.poll():
@@ -168,6 +169,17 @@ def comms_worker(conn):
                 print(f"Received from ESP: {response}")
                 if response:
                     conn.send({"type": "esp_msg", "value": response})
+                """
+                if response.startswith("STATS,"):
+                    parts = response.split(",")
+                    if len(parts) == 4:
+                        lmb = int(parts[1])
+                        rmb = int(parts[2])
+                        distance_m = float(parts[3]) / 100.0  # cm -> m
+                        conn.send({"type": "stat_update", "data": {"lmb": lmb, "rmb": rmb, "dist": distance_m}})
+                elif response:
+                    conn.send({"type": "esp_msg", "value": response})
+                    """
         except Exception as e:
             print(f"<System> USB connection error: {e}")
             esp.disconnect()
@@ -176,6 +188,18 @@ def comms_worker(conn):
 
         keys = keyboard.get_key()
         current_time = time.time()
+
+        # Detect key releases (key was pressed before, but not anymore)
+        current_keys_set = set(keys) if keys else set()
+        released_keys = pressed_keys_set - current_keys_set
+
+        # Count each released key as one key press
+        if released_keys:
+            num_released = len(released_keys)
+            conn.send({"type": "stat_increment", "key": "keys", "amount": num_released})
+
+        pressed_keys_set = current_keys_set
+
         if keys != last_keys or (keys and current_time - last_send_time > 0.1):
             conn.send({"type": "keyboard", "keys": keys if keys else ""})
             last_keys = keys

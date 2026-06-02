@@ -43,6 +43,19 @@ int bufferIndex = 0;
 bool isCommandReady = false;
 int targetDetected = 0;
 
+// Statistics tracking
+float totalDistanceCm = 0.0;
+float lastPosX = 0.0;
+float lastPosY = 0.0;
+unsigned long lastStatsSentMs = 0;
+const unsigned long STATS_SEND_INTERVAL_MS = 5000;
+
+// LMB/RMB click tracking
+unsigned long totalLmbClicks = 0;
+unsigned long totalRmbClicks = 0;
+bool lastFireOutputState = false;
+bool lastScopeOutputState = false;
+
 // ============================================================================
 // Configurable parameters and state variables.
 // ============================================================================
@@ -170,7 +183,7 @@ float pxToCmY = 0.0021167; // ... = 1px * 2.54 / eDPI
 
 float kpVision = 130.0;
 float kiVision = 5.0;
-float kdVision = 10.0;
+float kdVision = 15.0;
 
 float prevVisionErrorX = 0.0;
 float prevVisionErrorY = 0.0;
@@ -301,6 +314,17 @@ void updateEncoderPosition() {
 
   currentPosX = (SIGN_X * ticksX / stepsPerCM) + 1.0;
   currentPosY = (SIGN_Y * ticksY / stepsPerCM) + 1.0;
+}
+
+void updateTraveledDistance() {
+  float dx = currentPosX - lastPosX;
+  float dy = currentPosY - lastPosY;
+  float distance = sqrt((dx * dx) + (dy * dy));
+
+  totalDistanceCm += distance;
+
+  lastPosX = currentPosX;
+  lastPosY = currentPosY;
 }
 
 // ============================================================================
@@ -1057,61 +1081,6 @@ void setup() {
   Serial.println("Send h command to perform homing.");
 }
 
-void applyCoreXYMovement(bool moveUp, bool moveDown, bool moveLeft, bool moveRight) {
-  isMovingUp = false;
-  isMovingDown = false;
-  isMovingLeft = false;
-  isMovingRight = false;
-
-  if (moveUp && moveLeft) {
-    setMotorsXY(false, LOW, true, LOW);
-    isMovingUp = true;
-    isMovingLeft = true;
-  }
-
-  else if (moveUp && moveRight) {
-    setMotorsXY(true, HIGH, false, LOW);
-    isMovingUp = true;
-    isMovingRight = true;
-  }
-
-  else if (moveDown && moveLeft) {
-    setMotorsXY(true, LOW, false, LOW);
-    isMovingDown = true;
-    isMovingLeft = true;
-  }
-
-  else if (moveDown && moveRight) {
-    setMotorsXY(false, LOW, true, HIGH);
-    isMovingDown = true;
-    isMovingRight = true;
-  }
-
-  else if (moveUp) {
-    setMotorsXY(true, HIGH, true, LOW);
-    isMovingUp = true;
-  }
-
-  else if (moveDown) {
-    setMotorsXY(true, LOW, true, HIGH);
-    isMovingDown = true;
-  }
-
-  else if (moveLeft) {
-    setMotorsXY(true, LOW, true, LOW);
-    isMovingLeft = true;
-  }
-
-  else if (moveRight) {
-    setMotorsXY(true, HIGH, true, HIGH);
-    isMovingRight = true;
-  }
-
-  else {
-    stopAllMotors();
-  }
-}
-
 void setDelayFromSpeedPercent(int speedPercent) {
   if (maxSpeedValue <= 0 || speedPercent <= 0) {
     stopAllMotors();
@@ -1229,34 +1198,67 @@ void applyVisionPControl() {
   lastVisionPidMicros = nowMicros;
 
   // Map the output to movement direction.
-
   float outputDeadband = 1.0;
 
-  bool moveLeft = outputX > outputDeadband;
-  bool moveRight = outputX < -outputDeadband;
+  // Set direction flags for endstop safety checks.
+  bool mLeft = outputX > outputDeadband;
+  bool mRight = outputX < -outputDeadband;
+  bool mDown = outputY > outputDeadband;
+  bool mUp = outputY < -outputDeadband;
 
-  bool moveDown = outputY > outputDeadband;
-  bool moveUp = outputY < -outputDeadband;
+  blockMoveIfWouldExceedLimit(mUp, mDown, mLeft, mRight);
 
-  blockMoveIfWouldExceedLimit(moveUp, moveDown, moveLeft, moveRight);
+  // Stop if movement is blocked by a virtual wall.
+  if ((!mUp && outputY < -outputDeadband) ||
+      (!mDown && outputY > outputDeadband) ||
+      (!mLeft && outputX > outputDeadband) ||
+      (!mRight && outputX < -outputDeadband)) {
+
+      isManualJogging = false;
+      stopAllMotors();
+      return;
+  }
+
+  // Apply CoreXY kinematic transformation directly from PID output.
+  float vM1 = -outputX - outputY;
+  float vM2 = -outputX + outputY;
+
+  // Normalize vector speed.
+  float maxV = max(abs(vM1), abs(vM2));
+  if (maxV > 0.0) {
+      vM1 /= maxV;
+      vM2 /= maxV;
+  }
+
+  // Send step data to the loop accumulator for proportional movement.
+  jogVM1 = abs(vM1);
+  jogVM2 = abs(vM2);
+  jogDirM1 = (vM1 >= 0) ? HIGH : LOW;
+  jogDirM2 = (vM2 >= 0) ? HIGH : LOW;
+
+  isMovingRight = mRight;
+  isMovingLeft  = mLeft;
+  isMovingDown  = mDown;
+  isMovingUp    = mUp;
 
   // Map the output magnitude to speed.
-
   float magnitude = sqrt((outputX * outputX) + (outputY * outputY));
-
   int pidSpeed = (int)magnitude;
 
   if (pidSpeed > maxSpeedValue) pidSpeed = maxSpeedValue;
-  if (pidSpeed < 8) pidSpeed = 8;
+  if (pidSpeed < 10) pidSpeed = 10;
 
   if (maxSpeedValue <= 0 || pidSpeed <= 0) {
+    isManualJogging = false;
     stopAllMotors();
     return;
   }
 
+  // Enable the step accumulator system in the main loop to execute the movement.
+  isManualJogging = true;
   setDelayFromSpeedPercent(pidSpeed);
-  applyCoreXYMovement(moveUp, moveDown, moveLeft, moveRight);
 }
+
 
 void updateFireControl() {
   unsigned long nowMs = millis();
@@ -1348,6 +1350,17 @@ void updateFireControl() {
     fireOutputActive = true;
     fireSequenceStartMs = nowMs;
   }
+
+  // Track LMB/RMB clicks (rising edge detection)
+  if (fireOutputActive && !lastFireOutputState) {
+    totalLmbClicks++;
+  }
+  if ((scopeOutputActive || manualScopeRequestActive) && !lastScopeOutputState) {
+    totalRmbClicks++;
+  }
+
+  lastFireOutputState = fireOutputActive;
+  lastScopeOutputState = (scopeOutputActive || manualScopeRequestActive);
 }
 
 // ============================================================================
@@ -1699,6 +1712,17 @@ void loop() {
 
     bufferIndex = 0;
     isCommandReady = false;
+  }
+
+  updateTraveledDistance();
+  if (millis() - lastStatsSentMs > STATS_SEND_INTERVAL_MS) {
+    Serial.print("STATS,");
+    Serial.print(totalLmbClicks);
+    Serial.print(",");
+    Serial.print(totalRmbClicks);
+    Serial.print(",");
+    Serial.println(totalDistanceCm, 2);
+    lastStatsSentMs = millis();
   }
 
   updateFireControl();
