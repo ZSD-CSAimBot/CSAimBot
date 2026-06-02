@@ -104,8 +104,10 @@ mkdir -p "$INSTALL_DIR"
 
 if [ -d "./CsAimBot" ]; then
     cp -r ./CsAimBot/* "$INSTALL_DIR/"
-    chmod +x "$INSTALL_DIR/CsAimBot"
-    echo -e "${GREEN}Pliki zostały poprawnie zainstalowane.${NC}"
+    echo -e "${YELLOW}Naprawianie uprawnień dostępu...${NC}"
+    chown -R $REAL_USER:$REAL_USER "$INSTALL_DIR"
+    chmod -R 755 "$INSTALL_DIR"
+    echo -e "${GREEN}Pliki zostały poprawnie zainstalowane i skonfigurowane.${NC}"
 else
     echo -e "${RED}BŁĄD KRYTYCZNY: Nie znaleziono plików aplikacji w archiwum!${NC}"
     exit 1
