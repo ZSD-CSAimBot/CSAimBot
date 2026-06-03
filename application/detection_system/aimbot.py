@@ -43,6 +43,7 @@ class AimBot:
 
         self.camera = CameraProvider(self.REGION)
         self.debug_frame = None
+        self.scope_check_frame = None
 
     def prepare_model(self, model_path):
         """
@@ -71,20 +72,33 @@ class AimBot:
         self.head_class_id = [1, 7]
         self.body_class_id = [0, 6]
 
+        self.scope_black_edges_detected = False
+        self.last_scope_black_click_time = 0.0
+        self.scope_black_click_cooldown = 0.7
+
         self.target_deadzone_x = 7
         self.target_deadzone_y = 7
 
     def capture_and_preprocess_frame(self):
         """Grab a frame from the camera and copy it into the model tensor."""
         dl_tensor = self.camera.grab_gpu_tensor()
+
         if dl_tensor is not None:
+            # CPU frame used for OpenCV scope-edge detection.
+            frame_cpu = dl_tensor.cpu().numpy()
+            self.scope_check_frame = frame_cpu
+
             if self.show_debug_window:
-                self.debug_frame = dl_tensor.cpu().numpy()
+                self.debug_frame = frame_cpu.copy()
+
             self.model_tensor[0, 0].copy_(dl_tensor[:, :, 2])  # R
             self.model_tensor[0, 1].copy_(dl_tensor[:, :, 1])  # G
             self.model_tensor[0, 2].copy_(dl_tensor[:, :, 0])  # B
             self.model_tensor.div_(255.0)
+
             return True
+
+        self.scope_check_frame = None
         return False
 
     def recoil_compensation(self, offset_x, offset_y):
@@ -105,6 +119,41 @@ class AimBot:
             ):
                 offset_y += self.recoil_strength
         return offset_x, offset_y
+
+    def detect_black_scope_edges(self, frame):
+        """
+        Detects sniper scope by checking whether screen edges are almost completely black.
+        Returns True if left and right edges are black.
+        """
+        if frame is None:
+            return False
+
+        h, w = frame.shape[:2]
+
+        edge_w = max(8, int(w * 0.08))
+        edge_h = max(8, int(h * 0.08))
+
+        left_edge = frame[:, :edge_w]
+        right_edge = frame[:, w - edge_w:]
+        top_edge = frame[:edge_h, :]
+        bottom_edge = frame[h - edge_h:, :]
+
+        def black_ratio(region):
+            gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
+            return np.mean(gray < 12)
+
+        left_black = black_ratio(left_edge)
+        right_black = black_ratio(right_edge)
+        top_black = black_ratio(top_edge)
+        bottom_black = black_ratio(bottom_edge)
+
+        # Main condition: both side edges are almost fully black.
+        # Extra top/bottom check makes it stricter.
+        return (
+                left_black > 0.92 and
+                right_black > 0.92 and
+                (top_black > 0.50 or bottom_black > 0.50)
+        )
 
     def update_params_state(self, boxes_data_tensor):
         """
@@ -247,9 +296,14 @@ class AimBot:
     def process_single_frame(self):
         """Run one full capture, inference, and display cycle."""
         if not self.capture_and_preprocess_frame():
+            self.scope_black_edges_detected = False
             return
 
-        results = self.model(self.model_tensor,conf=0.35, verbose=False)
+        self.scope_black_edges_detected = self.detect_black_scope_edges(
+            self.scope_check_frame
+        )
+
+        results = self.model(self.model_tensor, conf=0.35, verbose=False)
         torch.cuda.synchronize()
 
         if results[0].boxes is not None and len(results[0].boxes) > 0:
@@ -334,7 +388,8 @@ def vision_worker(pipe_conn, model_path, target_fps):
                         "y": offset_y,
                         "sniper": aimbot.is_holding_sniper,
                         "deadzone_x": aimbot.target_deadzone_x,
-                        "deadzone_y": aimbot.target_deadzone_y
+                        "deadzone_y": aimbot.target_deadzone_y,
+                        "black_scope_edges": aimbot.scope_black_edges_detected
                     })
                 except Exception as e:
                     print(e)

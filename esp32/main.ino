@@ -181,8 +181,8 @@ float visionTargetY = 0.0;
 float pxToCmX = 0.0021167; // to be calibrated based on eDPI (current 1200)
 float pxToCmY = 0.0021167; // ... = 1px * 2.54 / eDPI
 
-float kpVision = 130.0;
-float kiVision = 5.0;
+float kpVision = 75.0;
+float kiVision = 6.0;
 float kdVision = 15.0;
 
 float prevVisionErrorX = 0.0;
@@ -198,8 +198,8 @@ float filteredOffsetX = 0.0;
 float filteredOffsetY = 0.0;
 const float VISION_FILTER_ALPHA = 0.65;
 
-int visionDeadzonePxX = 7;
-int visionDeadzonePxY = 7;
+int visionDeadzonePxX = 5;
+int visionDeadzonePxY = 5;
 
 const float VISION_TARGET_TOLERANCE_CM = 0.01;
 
@@ -1265,19 +1265,20 @@ void updateFireControl() {
 
   // Emergency fail-safe
   if (pressedKeys.indexOf('p') >= 0) {
+    fireRequestActive = false;
     fireOutputActive = false;
     scopeOutputActive = false;
+
     digitalWrite(RELAY1_PIN, LOW);
     digitalWrite(RELAY2_PIN, LOW);
     return;
   }
 
-  // --------------------------------------------------------
+    // --------------------------------------------------------
   // SNIPER LOGIC
   // --------------------------------------------------------
   if (isHoldingSniper == 1 || scopeOutputActive || (fireOutputActive && isHoldingSniper == 1)) {
-
-    // 1. Cooldown block - strictly ignores YOLO to prevent "spamming" dead bodies
+    // 1. Cooldown block - strictly ignores YOLO to prevent spamming dead bodies
     if (lastFireEndMs != 0 && (nowMs - lastFireEndMs < SNIPER_COOLDOWN_MS)) {
       digitalWrite(RELAY1_PIN, LOW);
       digitalWrite(RELAY2_PIN, manualScopeRequestActive ? HIGH : LOW);
@@ -1291,7 +1292,8 @@ void updateFireControl() {
       if (nowMs - fireSequenceStartMs >= SNIPER_HOLD_MS) {
         digitalWrite(RELAY1_PIN, LOW);
         fireOutputActive = false;
-        lastFireEndMs = nowMs; // Start the strict bolting cooldown
+        lastFireEndMs = nowMs;
+
         Serial.println("SNIPER: FIRE END");
       }
       return;
@@ -1300,7 +1302,7 @@ void updateFireControl() {
     // 3. Phase: Quickscoping - wait for scope delay, then shoot
     if (scopeOutputActive) {
       if (nowMs - fireSequenceStartMs >= SNIPER_SCOPE_DELAY_MS) {
-        digitalWrite(RELAY2_PIN, LOW); // Release scope
+        digitalWrite(RELAY2_PIN, LOW);  // Release first RMB click
         digitalWrite(RELAY1_PIN, HIGH); // Shoot
         fireOutputActive = true;
         scopeOutputActive = false;
@@ -1310,15 +1312,15 @@ void updateFireControl() {
       return;
     }
 
-    // 4. Idle - waiting for target (allows manual scoping)
+    // 4. Idle - waiting for target or manual scope
     if (!fireRequestActive) {
       digitalWrite(RELAY1_PIN, LOW);
       digitalWrite(RELAY2_PIN, manualScopeRequestActive ? HIGH : LOW);
       return;
     }
 
-    // 5. Target found - initiate new sequence
-    digitalWrite(RELAY2_PIN, HIGH); // Right click to scope
+    // 5. Target found - first RMB click to scope
+    digitalWrite(RELAY2_PIN, HIGH);
     scopeOutputActive = true;
     fireSequenceStartMs = nowMs;
     Serial.println("SNIPER: SCOPE START");

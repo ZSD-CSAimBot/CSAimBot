@@ -2146,6 +2146,10 @@ class GUI:
         last_send_time = 0.0
         last_sent_command = None
 
+        black_scope_edges = False
+        last_black_scope_click_time = 0.0
+        black_scope_click_until = 0.0
+
         target_offset_x = 0
         target_offset_y = 0
         sniper = 0
@@ -2169,6 +2173,7 @@ class GUI:
 
                 deadzone_x = int(latest_vision_msg.get("deadzone_x", 7))
                 deadzone_y = int(latest_vision_msg.get("deadzone_y", 7))
+                black_scope_edges = bool(latest_vision_msg.get("black_scope_edges", False))
 
                 if x_val is None or y_val is None or x_val == "-" or y_val == "-":
                     target_offset_x = 0
@@ -2324,15 +2329,30 @@ class GUI:
                     self.trajectory_logger.update_target(target_offset_x, target_offset_y)
 
                 if vision_has_target:
-                    target_detected = 1 if vision_has_target else 0
+                    target_detected = 1
                     keys_to_send = "-"
                     send_x = target_offset_x
                     send_y = target_offset_y
+
                 else:
                     keys_to_send = self.manual_keys if self.manual_keys else "-"
+
                     send_x = 0
                     send_y = 0
                     sniper = 0
+
+                if black_scope_edges and (now - last_black_scope_click_time) >= 0.7:
+                    black_scope_click_until = now + 0.08
+                    last_black_scope_click_time = now
+                    print("<SCOPE_DETECT> black edges detected -> RMB click", flush=True)
+
+                force_rmb_click = now < black_scope_click_until
+
+                if force_rmb_click:
+                    if keys_to_send == "-" or keys_to_send == "":
+                        keys_to_send = "2"
+                    elif "2" not in keys_to_send:
+                        keys_to_send += "2"
 
                 command = (
                     f"{send_x},{send_y},{sniper},{keys_to_send},"
