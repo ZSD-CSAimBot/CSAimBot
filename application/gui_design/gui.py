@@ -153,11 +153,11 @@ class GUI:
                 "stat_dist_title": "Distance Traveled",
                 "stat_dist_desc": "Total distance traveled by a mouse",
                 "stat_energy_title": "Energy wasted",
-                "stat_energy_desc": "Aproximated amount of energy used by the bot",
-                "stat_unknown_title": "Times force stopped",
-                "stat_unknown_desc": "Amount of times force stop has been activated",
+                "stat_energy_desc": "Approximated amount of energy used by the bot",
+                "stat_forcestop_title": "Times force stopped",
+                "stat_forcestop_desc": "Amount of times force stop has been activated",
                 "stat_keys_title": "Keys pressed",
-                "stat_keys_desc": "Amount of key presses by a user",
+                "stat_keys_desc": "Amount of key presses inputted by a user",
                 "refresh": "Refresh",
                 "axis_time": "Time",
                 "axis_dist": "Distance",
@@ -203,8 +203,8 @@ class GUI:
                 "stat_dist_desc": "Całkowity dystans przebyty przez mysz",
                 "stat_energy_title": "Zużyta energia",
                 "stat_energy_desc": "Przybliżona ilość energii zużytej przez bota",
-                "stat_unknown_title": "Wymuszone zatrzymania",
-                "stat_unknown_desc": "Ilość wymuszonych zatrzymań bota",
+                "stat_forcestop_title": "Wymuszone zatrzymania",
+                "stat_forcestop_desc": "Ilość wymuszonych zatrzymań bota",
                 "stat_keys_title": "Wciśnięte klawisze",
                 "stat_keys_desc": "Ilość klawiszy wciśniętych przez użytkownika",
                 "refresh": "Odśwież",
@@ -689,7 +689,7 @@ class GUI:
             if dpg.does_item_exist(tag):
                 dpg.set_value(tag, t[dict_key])
 
-        stat_ids = ["lmb", "rmb", "time", "mouse", "dist", "energy", "unknown", "keys"]
+        stat_ids = ["lmb", "rmb", "time", "mouse", "dist", "energy", "forcestop", "keys"]
         for s_id in stat_ids:
             title_tag = f"stat_title_{s_id}"
             desc_tag = f"stat_desc_{s_id}"
@@ -1731,7 +1731,7 @@ class GUI:
                     ("mouse", "tex_stat_mouse"),
                     ("dist", "tex_stat_dist"),
                     ("energy", "tex_stat_energy"),
-                    ("unknown", "tex_stat_stop"),
+                    ("forcestop", "tex_stat_stop"),
                     ("keys", "tex_stat_keys"),
                 ]
 
@@ -2109,6 +2109,7 @@ class GUI:
                 {"cmd": "SEND", "value": f"0,0,0,p,{self.current_speed},0,7,7"}
             )
             self.add_log("<System> EMERGENCY STOP ACTIVATED", color=[255, 0, 0])
+        self._increment_stat("forcestop", 1)
 
         # Stop calibration if running
         if hasattr(self, 'cali_routine') and self.cali_routine is not None:
@@ -2275,30 +2276,50 @@ class GUI:
                                 self.add_log(f"<Telemetry> Saved: {os.path.basename(saved_file)}", color=[80, 255, 80])
                     self.last_pressed_keys = keys
 
+
                 elif msg.get("type") == "esp_msg":
+
                     esp_text = msg.get("value")
-                    print(f"<ESP32> {esp_text}", flush=True)
 
+                    if not esp_text.startswith("STATS,"):
+                        print(f"<ESP32> {esp_text}", flush=True)
                     try:
-                        if "X:" in esp_text and "Y:" in esp_text:
-                            parts = esp_text.split("|")
+                        if esp_text.startswith("STATS,"):
+                            parts = esp_text.split(",")
+                            if len(parts) >= 4:
+                                current_lmb = int(parts[1])
+                                current_rmb = int(parts[2])
+                                current_dist = float(parts[3]) / 100.0
+                                diff_lmb = current_lmb - self.esp_last_lmb
+                                diff_rmb = current_rmb - self.esp_last_rmb
+                                diff_dist = current_dist - self.esp_last_dist
 
+                                if diff_lmb < 0: diff_lmb = current_lmb
+                                if diff_rmb < 0: diff_rmb = current_rmb
+                                if diff_dist < 0: diff_dist = current_dist
+
+                                self.esp_last_lmb = current_lmb
+                                self.esp_last_rmb = current_rmb
+                                self.esp_last_dist = current_dist
+
+                                if diff_lmb > 0: self._increment_stat("lmb", diff_lmb)
+                                if diff_rmb > 0: self._increment_stat("rmb", diff_rmb)
+                                if diff_dist > 0: self._increment_stat("dist", diff_dist)
+
+                        elif "X:" in esp_text and "Y:" in esp_text:
+                            parts = esp_text.split("|")
                             for part in parts:
                                 part = part.strip()
-
                                 if part.startswith("X:"):
                                     self.pos_x = float(part.split(":")[1].strip())
-
                                 elif part.startswith("Y:"):
                                     self.pos_y = float(part.split(":")[1].strip())
-
                                 elif part.startswith("Z:"):
                                     self.pos_z = float(part.split(":")[1].strip())
-
                             self._update_coords_display()
+
                             if self.is_recording_trajectory:
                                 self.trajectory_logger.add_point(time.time(), self.pos_x, self.pos_y)
-
                             curr_time = time.time() - self.start_time
                             self.plot_time_data.append(curr_time)
                             self.plot_x_data.append(self.pos_x)
@@ -2320,8 +2341,40 @@ class GUI:
 
                     except (ValueError, IndexError, AttributeError):
                         pass
+                elif msg.get("type") == "esp_stats":
+                    current_lmb = msg.get("lmb", 0)
+                    current_rmb = msg.get("rmb", 0)
+                    current_dist = msg.get("dist", 0.0)
 
+                    diff_lmb = current_lmb - self.esp_last_lmb
+                    diff_rmb = current_rmb - self.esp_last_rmb
+                    diff_dist = current_dist - self.esp_last_dist
 
+                    if diff_lmb < 0: diff_lmb = current_lmb
+                    if diff_rmb < 0: diff_rmb = current_rmb
+                    if diff_dist < 0: diff_dist = current_dist
+
+                    self.esp_last_lmb = current_lmb
+                    self.esp_last_rmb = current_rmb
+                    self.esp_last_dist = current_dist
+
+                    updates = {}
+                    if diff_lmb > 0: updates["lmb"] = diff_lmb
+                    if diff_rmb > 0: updates["rmb"] = diff_rmb
+                    if diff_dist > 0: updates["dist"] = diff_dist
+
+                    if updates:
+                        for key, val in updates.items():
+                            self.stats_manager.increment(key, val)
+                            tag = f"stat_val_{key}"
+                            if dpg.does_item_exist(tag):
+                                current_val = self.stats_manager.get(key)
+                                dpg.configure_item(
+                                    tag,
+                                    label=StatsManager.format_value(key, current_val)
+                                )
+                        if hasattr(self.stats_manager, 'save'):
+                            self.stats_manager.save()
                 elif msg.get("type") == "stat_update":
                     data = msg.get("data", {})
                     for key, value in data.items():
@@ -2543,32 +2596,31 @@ class GUI:
 
             # Update time and energy statistics if connected
             if self.is_connected and self.connection_start_time is not None:
-                elapsed = time.time() - self.connection_start_time
-
-                # Accumulate time instead of replacing
-                previous_time = self.stats_manager.get("time")
-                self.stats_manager.set("time", previous_time + int(elapsed))
-
-                # Accumulate energy consumption (150W)
-                energy_wh = (elapsed / 3600.0) * 150.0
-                previous_energy = self.stats_manager.get("energy")
-                self.stats_manager.set("energy", previous_energy + energy_wh)
-
-                # Reset the connection timer to avoid double counting
-                self.connection_start_time = time.time()
-
-                # Update GUI displays every second
                 current_time = time.time()
-                if current_time - self._last_stats_refresh >= 1.0:
-                    self._last_stats_refresh = current_time
-                    for key in ["time", "energy"]:
-                        tag = f"stat_val_{key}"
-                        if dpg.does_item_exist(tag):
-                            value = self.stats_manager.get(key)
-                            dpg.configure_item(
-                                tag,
-                                label=StatsManager.format_value(key, value)
-                            )
+                elapsed = current_time - self.connection_start_time
+
+                # Process logic only if at least 1 second has passed to save CPU
+                if elapsed >= 1.0:
+                    # Update internal stats storage
+                    self.stats_manager.increment("time", int(elapsed))
+
+                    energy_wh = (elapsed / 3600.0) * 150.0
+                    self.stats_manager.increment("energy", energy_wh)
+
+                    # Update the baseline timer
+                    self.connection_start_time = current_time
+
+                    # Update GUI displays
+                    if current_time - self._last_stats_refresh >= 1.0:
+                        self._last_stats_refresh = current_time
+                        for key in ["time", "energy"]:
+                            tag = f"stat_val_{key}"
+                            if dpg.does_item_exist(tag):
+                                value = self.stats_manager.get(key)
+                                dpg.configure_item(
+                                    tag,
+                                    label=StatsManager.format_value(key, value)
+                                )
 
             dpg.render_dearpygui_frame()
 

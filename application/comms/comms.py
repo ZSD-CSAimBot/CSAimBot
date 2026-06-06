@@ -166,20 +166,26 @@ def comms_worker(conn):
         try:
             if is_connected and esp.esp and esp.esp.in_waiting > 0:
                 response = esp.get_response()
-                print(f"Received from ESP: {response}")
                 if response:
-                    conn.send({"type": "esp_msg", "value": response})
-                """
-                if response.startswith("STATS,"):
-                    parts = response.split(",")
-                    if len(parts) == 4:
-                        lmb = int(parts[1])
-                        rmb = int(parts[2])
-                        distance_m = float(parts[3]) / 100.0  # cm -> m
-                        conn.send({"type": "stat_update", "data": {"lmb": lmb, "rmb": rmb, "dist": distance_m}})
-                elif response:
-                    conn.send({"type": "esp_msg", "value": response})
-                    """
+                    # Catch statistics from ESP32 and send them to GUI
+                    if response.startswith("STATS,"):
+                        parts = response.split(",")
+                        if len(parts) >= 4:
+                            try:
+                                lmb = int(parts[1])
+                                rmb = int(parts[2])
+                                distance_m = float(parts[3]) / 100.0  # cm to meters
+                                conn.send({
+                                    "type": "esp_stats",
+                                    "lmb": lmb,
+                                    "rmb": rmb,
+                                    "dist": distance_m
+                                })
+                            except ValueError:
+                                pass
+                    else:
+                        print(f"Received from ESP: {response}")
+                        conn.send({"type": "esp_msg", "value": response})
         except Exception as e:
             print(f"<System> USB connection error: {e}")
             esp.disconnect()
