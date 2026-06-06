@@ -43,11 +43,24 @@ int bufferIndex = 0;
 bool isCommandReady = false;
 int targetDetected = 0;
 
+// Statistics tracking
+float totalDistanceCm = 0.0;
+float lastPosX = 0.0;
+float lastPosY = 0.0;
+unsigned long lastStatsSentMs = 0;
+const unsigned long STATS_SEND_INTERVAL_MS = 5000;
+
+// LMB/RMB click tracking
+unsigned long totalLmbClicks = 0;
+unsigned long totalRmbClicks = 0;
+bool lastFireOutputState = false;
+bool lastScopeOutputState = false;
+
 // ============================================================================
 // Configurable parameters and state variables.
 // ============================================================================
 
-int delayCoreXY = 700;
+int delayCoreXY = 600;
 const int delayZ = 50;
 int homingDelay = 600;
 
@@ -158,7 +171,7 @@ float manualAccumM2 = 0.0;
 int targetOffsetPxX = 0;
 int targetOffsetPxY = 0;
 int isHoldingSniper = 0;
-int maxSpeedValue = 75;
+int maxSpeedValue = 100;
 
 bool visionControlActive = false;
 
@@ -168,19 +181,9 @@ float visionTargetY = 0.0;
 float pxToCmX = 0.0021167; // to be calibrated based on eDPI (current 1200)
 float pxToCmY = 0.0021167; // ... = 1px * 2.54 / eDPI
 
-float kpVision = 90.0;
-float kiVision = 5.0;
-float kdVision = 10.0;
-
-// Speed mapping constants for applyVisionPControl().
-// SPEED_SQRT_SCALE : sqrt(PID magnitude) * scale → speed % (aggressive zone).
-//   15.0 gives: 15px→25%, 50px→37%, 100px→65%, 200px→capped.
-// BRAKE_ZONE_PX   : pixel-error threshold below which the braking zone activates.
-// MIN_BRAKE_SPEED : speed floor inside the braking zone — keeps strafe tracking
-//   alive even at point-blank range without causing oscillations.
-const float SPEED_SQRT_SCALE = 15.0;
-const float BRAKE_ZONE_PX    = 40.0;
-const float MIN_BRAKE_SPEED  = 12.0;
+float kpVision = 75.0;
+float kiVision = 6.0;
+float kdVision = 15.0;
 
 float prevVisionErrorX = 0.0;
 float prevVisionErrorY = 0.0;
@@ -193,10 +196,10 @@ unsigned long lastVisionPidMicros = 0;
 
 float filteredOffsetX = 0.0;
 float filteredOffsetY = 0.0;
-const float VISION_FILTER_ALPHA = 0.35;
+const float VISION_FILTER_ALPHA = 0.65;
 
-const int VISION_DEADZONE_PX_X = 7;
-const int VISION_DEADZONE_PX_Y = 7;
+int visionDeadzonePxX = 5;
+int visionDeadzonePxY = 5;
 
 const float VISION_TARGET_TOLERANCE_CM = 0.01;
 
@@ -213,13 +216,22 @@ const unsigned long VISION_CENTERED_COOLDOWN_MS = 250;
 // Fire control settings.
 // ============================================================================
 
-const unsigned long FIRE_HOLD_MS = 70;
-const unsigned long FIRE_GAP_MS = 250;
+// Rifle settings
+const unsigned long RIFLE_HOLD_MS = 70;
+const unsigned long RIFLE_GAP_MS = 250;
+
+// Sniper settings
+const unsigned long SNIPER_SCOPE_DELAY_MS = 35; // Quickscope delay
+const unsigned long SNIPER_HOLD_MS = 50;        // Click duration
+const unsigned long SNIPER_COOLDOWN_MS = 1600;  // Strict lockout to ignore dead bodies
 
 bool fireRequestActive = false;
-bool fireOutputActive = false;
+bool manualScopeRequestActive = false;
 
-unsigned long fireStartMs = 0;
+// State trackers
+bool fireOutputActive = false;
+bool scopeOutputActive = false;
+unsigned long fireSequenceStartMs = 0;
 unsigned long lastFireEndMs = 0;
 
 // ============================================================================
@@ -302,6 +314,17 @@ void updateEncoderPosition() {
 
   currentPosX = (SIGN_X * ticksX / stepsPerCM) + 1.0;
   currentPosY = (SIGN_Y * ticksY / stepsPerCM) + 1.0;
+}
+
+void updateTraveledDistance() {
+  float dx = currentPosX - lastPosX;
+  float dy = currentPosY - lastPosY;
+  float distance = sqrt((dx * dx) + (dy * dy));
+
+  totalDistanceCm += distance;
+
+  lastPosX = currentPosX;
+  lastPosY = currentPosY;
 }
 
 // ============================================================================
@@ -466,26 +489,168 @@ void autoLiftCenterAndRestoreZ(const char* reason) {
   Serial.println("AUTO RECOVERY START");
   Serial.print("Reason: ");
   Serial.println(reason);
-  Serial.println("Mode: Sequential (Lift Z -> Move to Center -> Drop Z)");
+  Serial.println("Mode: Full Z lift -> XY center + Z drop from half path");
   Serial.println("==================================================");
   Serial.println();
 
   stopAllMotors();
   delay(30);
 
+  // ============================================================
+  // 1. First, fully raise the mouse, as before.
+  // ============================================================
+
   zLift();
-  moveToCenter(100);
-  zDrop();
+
+  stopAllMotors();
+  delay(10);
+
+  updateEncoderPosition();
+
+
+  const float targetX = LIMIT_MAX_X / 2.0;
+  const float targetY = LIMIT_MAX_Y / 2.0;
+
+  const float startX = currentPosX;
+  const float startY = currentPosY;
+
+  float startDistance = distanceToPoint(startX, startY, targetX, targetY);
+
+  if (startDistance < 0.01) {
+    startDistance = 0.01;
+  }
+
+  const float DROP_START_FRACTION = 0.50;
+
+  const unsigned long XY_PULSE_INTERVAL_US = 200;
+  const unsigned long Z_PULSE_INTERVAL_US = 100;
+
+  bool xyFinished = false;
+  bool zDropStarted = false;
+  bool zFinished = false;
+
+  long zDropStepsDone = 0;
+
+  unsigned long recoveryStartMs = millis();
+  unsigned long lastXYPulseUs = micros();
+  unsigned long lastZPulseUs = micros();
+
+  while (true) {
+    if (checkEmergencyStop()) {
+      stopAllMotors();
+      isAutoRecovering = false;
+      return;
+    }
+
+    if (millis() - recoveryStartMs > MAX_RECOVERY_TIME_MS) {
+      stopAllMotors();
+
+      Serial.println("AUTO RECOVERY ABORTED: timeout.");
+      Serial.println("==================================================");
+      Serial.println();
+
+      isAutoRecovering = false;
+      return;
+    }
+
+    updateEncoderPosition();
+
+    float remainingDistance = distanceToPoint(
+      currentPosX,
+      currentPosY,
+      targetX,
+      targetY
+    );
+
+    float progress = 1.0 - (remainingDistance / startDistance);
+
+    if (progress < 0.0) progress = 0.0;
+    if (progress > 1.0) progress = 1.0;
+
+
+    bool moveU = false;
+    bool moveD = false;
+    bool moveL = false;
+    bool moveR = false;
+
+    if (currentPosX < targetX - CENTER_TOLERANCE_CM) {
+      moveL = true;
+    } else if (currentPosX > targetX + CENTER_TOLERANCE_CM) {
+      moveR = true;
+    }
+
+    if (currentPosY < targetY - CENTER_TOLERANCE_CM) {
+      moveD = true;
+    } else if (currentPosY > targetY + CENTER_TOLERANCE_CM) {
+      moveU = true;
+    }
+
+    xyFinished = !moveU && !moveD && !moveL && !moveR;
+
+    unsigned long nowUs = micros();
+
+    if (!xyFinished) {
+      if (nowUs - lastXYPulseUs >= XY_PULSE_INTERVAL_US) {
+        setXYDirectionToCenter(moveU, moveD, moveL, moveR);
+        stepXYRecovery();
+
+        lastXYPulseUs = micros();
+      }
+    } else {
+      motor1Running = false;
+      motor2Running = false;
+
+      digitalWrite(PUL1_PIN, LOW);
+      digitalWrite(PUL2_PIN, LOW);
+    }
+
+    if (!zDropStarted && progress >= DROP_START_FRACTION) {
+      zDropStarted = true;
+
+      digitalWrite(DIRZ_PIN, HIGH); // Direction: lower Z
+
+      Serial.print("AUTO RECOVERY: XY progress = ");
+      Serial.print(progress * 100.0, 1);
+      Serial.println("%. Starting Z drop.");
+    }
+
+    if (zDropStarted && !zFinished) {
+      nowUs = micros();
+
+      if (nowUs - lastZPulseUs >= Z_PULSE_INTERVAL_US) {
+        stepZRecovery(false);
+        zDropStepsDone++;
+
+        lastZPulseUs = micros();
+
+        if (zDropStepsDone >= stepsForZDrop) {
+          currentZSteps = -stepsForZDrop;
+          isZUp = false;
+          zFinished = true;
+
+          digitalWrite(PULZ_PIN, LOW);
+
+          Serial.println("AUTO RECOVERY: Z is DOWN.");
+        }
+      }
+    }
+
+    if (xyFinished && zFinished) {
+      break;
+    }
+  }
+
+  stopAllMotors();
 
   Serial.println();
   Serial.println("==================================================");
   Serial.println("AUTO RECOVERY END");
+  Serial.println("XY centered and Z restored.");
   Serial.println("==================================================");
   Serial.println();
 
   isAutoRecovering = false;
 }
-
 // ============================================================================
 // Continuous software workspace limit monitor.
 // ============================================================================
@@ -916,61 +1081,6 @@ void setup() {
   Serial.println("Send h command to perform homing.");
 }
 
-void applyCoreXYMovement(bool moveUp, bool moveDown, bool moveLeft, bool moveRight) {
-  isMovingUp = false;
-  isMovingDown = false;
-  isMovingLeft = false;
-  isMovingRight = false;
-
-  if (moveUp && moveLeft) {
-    setMotorsXY(false, LOW, true, LOW);
-    isMovingUp = true;
-    isMovingLeft = true;
-  }
-
-  else if (moveUp && moveRight) {
-    setMotorsXY(true, HIGH, false, LOW);
-    isMovingUp = true;
-    isMovingRight = true;
-  }
-
-  else if (moveDown && moveLeft) {
-    setMotorsXY(true, LOW, false, LOW);
-    isMovingDown = true;
-    isMovingLeft = true;
-  }
-
-  else if (moveDown && moveRight) {
-    setMotorsXY(false, LOW, true, HIGH);
-    isMovingDown = true;
-    isMovingRight = true;
-  }
-
-  else if (moveUp) {
-    setMotorsXY(true, HIGH, true, LOW);
-    isMovingUp = true;
-  }
-
-  else if (moveDown) {
-    setMotorsXY(true, LOW, true, HIGH);
-    isMovingDown = true;
-  }
-
-  else if (moveLeft) {
-    setMotorsXY(true, LOW, true, LOW);
-    isMovingLeft = true;
-  }
-
-  else if (moveRight) {
-    setMotorsXY(true, HIGH, true, HIGH);
-    isMovingRight = true;
-  }
-
-  else {
-    stopAllMotors();
-  }
-}
-
 void setDelayFromSpeedPercent(int speedPercent) {
   if (maxSpeedValue <= 0 || speedPercent <= 0) {
     stopAllMotors();
@@ -996,8 +1106,8 @@ void applyVisionPControl() {
   updateEncoderPosition();
 
   bool isVisionCenteredNow =
-  abs(targetOffsetPxX) <= VISION_DEADZONE_PX_X &&
-  abs(targetOffsetPxY) <= VISION_DEADZONE_PX_Y;
+  abs(targetOffsetPxX) <= visionDeadzonePxX  &&
+  abs(targetOffsetPxY) <= visionDeadzonePxY;
 
   if (isVisionCenteredNow) {
     stopAllMotors();
@@ -1088,86 +1198,147 @@ void applyVisionPControl() {
   lastVisionPidMicros = nowMicros;
 
   // Map the output to movement direction.
-
   float outputDeadband = 1.0;
 
-  bool moveLeft = outputX > outputDeadband;
-  bool moveRight = outputX < -outputDeadband;
+  // Set direction flags for endstop safety checks.
+  bool mLeft = outputX > outputDeadband;
+  bool mRight = outputX < -outputDeadband;
+  bool mDown = outputY > outputDeadband;
+  bool mUp = outputY < -outputDeadband;
 
-  bool moveDown = outputY > outputDeadband;
-  bool moveUp = outputY < -outputDeadband;
+  blockMoveIfWouldExceedLimit(mUp, mDown, mLeft, mRight);
 
-  blockMoveIfWouldExceedLimit(moveUp, moveDown, moveLeft, moveRight);
+  // Stop if movement is blocked by a virtual wall.
+  if ((!mUp && outputY < -outputDeadband) ||
+      (!mDown && outputY > outputDeadband) ||
+      (!mLeft && outputX > outputDeadband) ||
+      (!mRight && outputX < -outputDeadband)) {
 
-  // -----------------------------------------------------------------------
-  // Two-zone speed mapping — prevents overshoot and oscillations.
-  //
-  // filteredPxMag is used as the zone selector (filtered, not raw, so a
-  // single noisy frame cannot trigger a premature zone switch).
-  //
-  //  AGGRESSIVE ZONE  (filteredPxMag > BRAKE_ZONE_PX = 40 px)
-  //    Speed = sqrt(PID magnitude) × SPEED_SQRT_SCALE
-  //    Nonlinear: far errors get full speed, the curve compresses gently.
-  //    No speed floor other than the global min of 5%.
-  //
-  //  BRAKING ZONE  (filteredPxMag ≤ 40 px)
-  //    A linearly shrinking CAP is imposed:
-  //      cap = maxSpeedValue  at the zone boundary (40 px)
-  //      cap = MIN_BRAKE_SPEED at the deadzone edge
-  //    pidSpeed is clamped to this cap from above.
-  //    The MIN_BRAKE_SPEED floor (12%) ensures a strafing target can still
-  //    be tracked even at point-blank range without stopping dead.
-  //    Higher kdVision (20) provides additional derivative-based braking
-  //    when the bot is closing in quickly, working in parallel with the cap.
-  //
-  // Why this eliminates oscillations:
-  //   The previous code allowed ~40–45 % speed at 15 px, causing the robot
-  //   to overshoot the target by ~50 px per update frame.  The braking zone
-  //   caps speed to ≈25 % at 15 px and ≈12 % at 8 px, limiting overshoot
-  //   to at most one deadzone-width per frame.
-  // -----------------------------------------------------------------------
-
-  float magnitude = sqrtf((outputX * outputX) + (outputY * outputY));
-  int pidSpeed = (int)(sqrtf(magnitude) * SPEED_SQRT_SCALE);
-
-  float filteredPxMag = sqrtf(filteredOffsetX * filteredOffsetX +
-                               filteredOffsetY * filteredOffsetY);
-
-  if (filteredPxMag <= BRAKE_ZONE_PX) {
-    float span      = BRAKE_ZONE_PX - (float)VISION_DEADZONE_PX_X;
-    float brakeRatio = (filteredPxMag - (float)VISION_DEADZONE_PX_X) / span;
-    if (brakeRatio < 0.0f) brakeRatio = 0.0f;
-    if (brakeRatio > 1.0f) brakeRatio = 1.0f;
-
-    int brakeCap = (int)(MIN_BRAKE_SPEED + brakeRatio * ((float)maxSpeedValue - MIN_BRAKE_SPEED));
-    if (pidSpeed > brakeCap) pidSpeed = brakeCap;
-    if (pidSpeed < (int)MIN_BRAKE_SPEED) pidSpeed = (int)MIN_BRAKE_SPEED;
+      isManualJogging = false;
+      stopAllMotors();
+      return;
   }
 
+  // Apply CoreXY kinematic transformation directly from PID output.
+  float vM1 = -outputX - outputY;
+  float vM2 = -outputX + outputY;
+
+  // Normalize vector speed.
+  float maxV = max(abs(vM1), abs(vM2));
+  if (maxV > 0.0) {
+      vM1 /= maxV;
+      vM2 /= maxV;
+  }
+
+  // Send step data to the loop accumulator for proportional movement.
+  jogVM1 = abs(vM1);
+  jogVM2 = abs(vM2);
+  jogDirM1 = (vM1 >= 0) ? HIGH : LOW;
+  jogDirM2 = (vM2 >= 0) ? HIGH : LOW;
+
+  isMovingRight = mRight;
+  isMovingLeft  = mLeft;
+  isMovingDown  = mDown;
+  isMovingUp    = mUp;
+
+  // Map the output magnitude to speed.
+  float magnitude = sqrt((outputX * outputX) + (outputY * outputY));
+  int pidSpeed = (int)magnitude;
+
   if (pidSpeed > maxSpeedValue) pidSpeed = maxSpeedValue;
-  if (pidSpeed < 5) pidSpeed = 5;
+  if (pidSpeed < 10) pidSpeed = 10;
 
   if (maxSpeedValue <= 0 || pidSpeed <= 0) {
+    isManualJogging = false;
     stopAllMotors();
     return;
   }
 
+  // Enable the step accumulator system in the main loop to execute the movement.
+  isManualJogging = true;
   setDelayFromSpeedPercent(pidSpeed);
-  applyCoreXYMovement(moveUp, moveDown, moveLeft, moveRight);
 }
+
 
 void updateFireControl() {
   unsigned long nowMs = millis();
 
+  // Emergency fail-safe
+  if (pressedKeys.indexOf('p') >= 0) {
+    fireRequestActive = false;
+    fireOutputActive = false;
+    scopeOutputActive = false;
+
+    digitalWrite(RELAY1_PIN, LOW);
+    digitalWrite(RELAY2_PIN, LOW);
+    return;
+  }
+
+    // --------------------------------------------------------
+  // SNIPER LOGIC
+  // --------------------------------------------------------
+  if (isHoldingSniper == 1 || scopeOutputActive || (fireOutputActive && isHoldingSniper == 1)) {
+    // 1. Cooldown block - strictly ignores YOLO to prevent spamming dead bodies
+    if (lastFireEndMs != 0 && (nowMs - lastFireEndMs < SNIPER_COOLDOWN_MS)) {
+      digitalWrite(RELAY1_PIN, LOW);
+      digitalWrite(RELAY2_PIN, manualScopeRequestActive ? HIGH : LOW);
+      fireOutputActive = false;
+      scopeOutputActive = false;
+      return;
+    }
+
+    // 2. Phase: Holding the shot (LMB)
+    if (fireOutputActive) {
+      if (nowMs - fireSequenceStartMs >= SNIPER_HOLD_MS) {
+        digitalWrite(RELAY1_PIN, LOW);
+        fireOutputActive = false;
+        lastFireEndMs = nowMs;
+
+        Serial.println("SNIPER: FIRE END");
+      }
+      return;
+    }
+
+    // 3. Phase: Quickscoping - wait for scope delay, then shoot
+    if (scopeOutputActive) {
+      if (nowMs - fireSequenceStartMs >= SNIPER_SCOPE_DELAY_MS) {
+        digitalWrite(RELAY2_PIN, LOW);  // Release first RMB click
+        digitalWrite(RELAY1_PIN, HIGH); // Shoot
+        fireOutputActive = true;
+        scopeOutputActive = false;
+        fireSequenceStartMs = nowMs;
+        Serial.println("SNIPER: FIRE START");
+      }
+      return;
+    }
+
+    // 4. Idle - waiting for target or manual scope
+    if (!fireRequestActive) {
+      digitalWrite(RELAY1_PIN, LOW);
+      digitalWrite(RELAY2_PIN, manualScopeRequestActive ? HIGH : LOW);
+      return;
+    }
+
+    // 5. Target found - first RMB click to scope
+    digitalWrite(RELAY2_PIN, HIGH);
+    scopeOutputActive = true;
+    fireSequenceStartMs = nowMs;
+    Serial.println("SNIPER: SCOPE START");
+    return;
+  }
+
+  // --------------------------------------------------------
+  // RIFLE LOGIC (Standard firing)
+  // --------------------------------------------------------
+
+  digitalWrite(RELAY2_PIN, manualScopeRequestActive ? HIGH : LOW);
+
   if (fireOutputActive) {
-    if (nowMs - fireStartMs >= FIRE_HOLD_MS) {
+    if (nowMs - fireSequenceStartMs >= RIFLE_HOLD_MS) {
       digitalWrite(RELAY1_PIN, LOW);
       fireOutputActive = false;
       lastFireEndMs = nowMs;
-
-      Serial.println("FIRE END");
     }
-
     return;
   }
 
@@ -1176,16 +1347,22 @@ void updateFireControl() {
     return;
   }
 
-  if (lastFireEndMs != 0 && (nowMs - lastFireEndMs < FIRE_GAP_MS)) {
-    digitalWrite(RELAY1_PIN, LOW);
-    return;
+  if (lastFireEndMs == 0 || (nowMs - lastFireEndMs >= RIFLE_GAP_MS)) {
+    digitalWrite(RELAY1_PIN, HIGH);
+    fireOutputActive = true;
+    fireSequenceStartMs = nowMs;
   }
 
-  digitalWrite(RELAY1_PIN, HIGH);
-  fireOutputActive = true;
-  fireStartMs = nowMs;
+  // Track LMB/RMB clicks (rising edge detection)
+  if (fireOutputActive && !lastFireOutputState) {
+    totalLmbClicks++;
+  }
+  if ((scopeOutputActive || manualScopeRequestActive) && !lastScopeOutputState) {
+    totalRmbClicks++;
+  }
 
-  Serial.println("FIRE START");
+  lastFireOutputState = fireOutputActive;
+  lastScopeOutputState = (scopeOutputActive || manualScopeRequestActive);
 }
 
 // ============================================================================
@@ -1349,41 +1526,48 @@ void loop() {
         int calibrated_edpi = data.substring(firstComma + 1, secondComma).toInt();
         skewAngleRad = data.substring(secondComma + 1).toFloat();
 
-        if (calibrated_edpi > 0) {
-          pxToCmX = 2.54f / calibrated_edpi;
-          pxToCmY = 2.54f / calibrated_edpi;
-        }
+        pxToCmX = 1.0 * 2.54 / calibrated_edpi;
+        pxToCmY = 1.0 * 2.54 / calibrated_edpi;
 
         Serial.print("Calibration saved! eDPI: ");
         Serial.print(calibrated_edpi);
-        Serial.print(" | pxToCm: ");
-        Serial.print(pxToCmX, 6);
         Serial.print(" | Skew Angle (rad): ");
         Serial.println(skewAngleRad, 4);
       }
     }
     else if (data.length() > 0) {
-      int commaIndexes[5] = {0, 0, 0, 0, 0};
+      int commaIndexes[7] = {0, 0, 0, 0, 0, 0, 0};
       int commaIndex = 0;
+
       for (int index = 0; index < data.length(); index++) {
         if (data[index] == ',') {
-          if (commaIndex < 5) {
+          if (commaIndex < 7) {
             commaIndexes[commaIndex] = index;
             commaIndex++;
           }
         }
       }
 
-      if (commaIndex == 5) {
+      if (commaIndex == 7) {
         targetOffsetPxX = data.substring(0, commaIndexes[0]).toInt();
         targetOffsetPxY = data.substring(commaIndexes[0] + 1, commaIndexes[1]).toInt();
         isHoldingSniper = data.substring(commaIndexes[1] + 1, commaIndexes[2]).toInt();
         pressedKeys = data.substring(commaIndexes[2] + 1, commaIndexes[3]);
         maxSpeedValue = data.substring(commaIndexes[3] + 1, commaIndexes[4]).toInt();
-        targetDetected = data.substring(commaIndexes[4] + 1).toInt();
+        targetDetected = data.substring(commaIndexes[4] + 1, commaIndexes[5]).toInt();
+
+        visionDeadzonePxX = data.substring(commaIndexes[5] + 1, commaIndexes[6]).toInt();
+        visionDeadzonePxY = data.substring(commaIndexes[6] + 1).toInt();
 
         if (maxSpeedValue < 0) maxSpeedValue = 0;
         if (maxSpeedValue > 100) maxSpeedValue = 100;
+
+        // Safeguards for deadzone received from YOLO.
+        if (visionDeadzonePxX < 7) visionDeadzonePxX = 7;
+        if (visionDeadzonePxY < 7) visionDeadzonePxY = 7;
+
+        if (visionDeadzonePxX > 200) visionDeadzonePxX = 200;
+        if (visionDeadzonePxY > 200) visionDeadzonePxY = 200;
 
         if (pressedKeys.indexOf('p') >= 0) {
           stopAllMotors();
@@ -1424,7 +1608,7 @@ void loop() {
             isManualJogging = true;
             updateEncoderPosition();
 
-            // 1. Zdefiniowanie wektora bazowego (z klawiszy)
+            // 1. Define base vector (from keys)
             float manX = 0.0;
             float manY = 0.0;
             if (rawLeft) manX = -1.0;
@@ -1432,16 +1616,16 @@ void loop() {
             if (rawUp) manY = -1.0;
             if (rawDown) manY = 1.0;
 
-            // 2. Obrót wektora o wykalibrowany kąt skrzywienia myszki
+            // 2. Rotate vector by the calibrated mouse skew angle
             float compAngle = -skewAngleRad;
             float rotX = (manX * cos(compAngle)) - (manY * sin(compAngle));
             float rotY = (manX * sin(compAngle)) + (manY * cos(compAngle));
 
-            // 3. Transformacja kinematyczna CoreXY
+            // 3. CoreXY kinematic transformation
             float vM1 = rotX - rotY;
             float vM2 = rotX + rotY;
 
-            // Normalizacja prędkości tak, aby główny silnik działał na 100% zadanego maxSpeedValue
+            // Normalize speed so the main motor runs at 100% of target maxSpeedValue
             float maxV = max(abs(vM1), abs(vM2));
             if (maxV > 0.0) {
                 vM1 /= maxV;
@@ -1461,7 +1645,7 @@ void loop() {
             bool mUp = isMovingUp, mDown = isMovingDown, mLeft = isMovingLeft, mRight = isMovingRight;
             blockMoveIfWouldExceedLimit(mUp, mDown, mLeft, mRight);
 
-            // Jeśli ruch uderza w wirtualną ścianę - zatrzymaj manualne przesuwanie
+            // If movement hits a virtual wall - stop manual jogging
             if ((!mUp && isMovingUp) || (!mDown && isMovingDown) || (!mLeft && isMovingLeft) || (!mRight && isMovingRight)) {
                 isManualJogging = false;
                 stopAllMotors();
@@ -1517,19 +1701,30 @@ void loop() {
           bool autoFire = false;
 
           if (visionControlActive && targetDetected == 1 &&
-              abs(targetOffsetPxX) <= VISION_DEADZONE_PX_X &&
-              abs(targetOffsetPxY) <= VISION_DEADZONE_PX_Y) {
+              abs(targetOffsetPxX) <= visionDeadzonePxX  &&
+              abs(targetOffsetPxY) <= visionDeadzonePxY) {
             autoFire = true;
           }
 
           fireRequestActive = (manualFire || autoFire);
-          digitalWrite(RELAY2_PIN, (pressedKeys.indexOf('2') >= 0) ? HIGH : LOW);
+          manualScopeRequestActive = (pressedKeys.indexOf('2') >= 0);
         }
       }
     }
 
     bufferIndex = 0;
     isCommandReady = false;
+  }
+
+  updateTraveledDistance();
+  if (millis() - lastStatsSentMs > STATS_SEND_INTERVAL_MS) {
+    Serial.print("STATS,");
+    Serial.print(totalLmbClicks);
+    Serial.print(",");
+    Serial.print(totalRmbClicks);
+    Serial.print(",");
+    Serial.println(totalDistanceCm, 2);
+    lastStatsSentMs = millis();
   }
 
   updateFireControl();
@@ -1541,7 +1736,7 @@ void loop() {
     motor1Running = false;
     motor2Running = false;
 
-    // Jeżeli akumulator osiągnie próg 1.0, uwalniamy fizyczny krok dla danego silnika
+    // If accumulator reaches 1.0 threshold, release a physical step for the motor
     if (manualAccumM1 >= 1.0) {
       motor1Running = true;
       manualAccumM1 -= 1.0;
@@ -1573,7 +1768,7 @@ void loop() {
     currentDelay = (int)(currentDelay * 0.707);
   }
 
-  const int MIN_SAFE_DELAY = 120;
+  const int MIN_SAFE_DELAY = 50; //120
 
   if (currentDelay < MIN_SAFE_DELAY) {
     currentDelay = MIN_SAFE_DELAY;

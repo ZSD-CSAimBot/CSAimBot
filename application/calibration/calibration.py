@@ -186,11 +186,12 @@ class CalibrationRoutine:
         """Main execution flow for the calibration process."""
 
         # Step 0: Read sensitivity from game files
-        csgo_sens = self.get_csgo_sensitivity()
+        #csgo_sens = self.get_csgo_sensitivity()
+        csgo_sens = 2.5
 
         if self.gui.is_connected:
             self.gui.add_log("<Calibration> Resetting previous skew data on ESP32...", color=[255, 255, 80])
-            self.gui.comms_pipe.send({"cmd": "SEND", "value": "CALIBRATION,1000,0.0"})
+            self.gui.comms_pipe.send({"cm111111111111111111112d": "SEND", "value": "CALIBRATION,1000,0.0"})
             time.sleep(0.5)
 
         # Generate image and coordinates

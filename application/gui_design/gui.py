@@ -49,6 +49,15 @@ class GUI:
             "Connected to ESP32" if self.is_connected else "No connection to ESP32"
         )
         self.connection_state = "disconnected"
+        self.connection_start_time = None  # Track connection time for stats
+
+        # ESP32 statistics offsets (to handle resets)
+        self.esp_lmb_offset = 0
+        self.esp_rmb_offset = 0
+        self.esp_dist_offset = 0.0
+        self.esp_last_lmb = 0
+        self.esp_last_rmb = 0
+        self.esp_last_dist = 0.0
 
         # Manual/display coordinates used by the GUI controls only.
         self.pos_x = 0
@@ -2137,6 +2146,10 @@ class GUI:
         last_send_time = 0.0
         last_sent_command = None
 
+        black_scope_edges = False
+        last_black_scope_click_time = 0.0
+        black_scope_click_until = 0.0
+
         target_offset_x = 0
         target_offset_y = 0
         sniper = 0
@@ -2160,6 +2173,7 @@ class GUI:
 
                 deadzone_x = int(latest_vision_msg.get("deadzone_x", 7))
                 deadzone_y = int(latest_vision_msg.get("deadzone_y", 7))
+                black_scope_edges = bool(latest_vision_msg.get("black_scope_edges", False))
 
                 if x_val is None or y_val is None or x_val == "-" or y_val == "-":
                     target_offset_x = 0
@@ -2201,6 +2215,13 @@ class GUI:
                 if msg.get("type") == "connection_status":
                     self.connection_state = msg.get("status")
                     self.is_connected = self.connection_state == "connected"
+
+                    # Track connection time for statistics
+                    if self.is_connected:
+                        self.connection_start_time = time.time()
+                    else:
+                        self.connection_start_time = None
+
                     self.update_connection_display()
 
                 elif msg.get("type") == "keyboard":
@@ -2272,13 +2293,12 @@ class GUI:
                     except (ValueError, IndexError, AttributeError):
                         pass
 
+
                 elif msg.get("type") == "stat_update":
-                    key, value = msg.get("key"), msg.get("value")
-
-                    if key and value is not None:
-                        self.stats_manager.set(key, value)
+                    data = msg.get("data", {})
+                    for key, value in data.items():
+                        self.stats_manager.increment(key, value)
                         tag = f"stat_val_{key}"
-
                         if dpg.does_item_exist(tag):
                             dpg.configure_item(
                                 tag,
@@ -2309,15 +2329,30 @@ class GUI:
                     self.trajectory_logger.update_target(target_offset_x, target_offset_y)
 
                 if vision_has_target:
-                    target_detected = 1 if vision_has_target else 0
+                    target_detected = 1
                     keys_to_send = "-"
                     send_x = target_offset_x
                     send_y = target_offset_y
+
                 else:
                     keys_to_send = self.manual_keys if self.manual_keys else "-"
+
                     send_x = 0
                     send_y = 0
                     sniper = 0
+
+                if black_scope_edges and (now - last_black_scope_click_time) >= 0.7:
+                    black_scope_click_until = now + 0.08
+                    last_black_scope_click_time = now
+                    print("<SCOPE_DETECT> black edges detected -> RMB click", flush=True)
+
+                force_rmb_click = now < black_scope_click_until
+
+                if force_rmb_click:
+                    if keys_to_send == "-" or keys_to_send == "":
+                        keys_to_send = "2"
+                    elif "2" not in keys_to_send:
+                        keys_to_send += "2"
 
                 command = (
                     f"{send_x},{send_y},{sniper},{keys_to_send},"
@@ -2477,6 +2512,35 @@ class GUI:
                         dpg.configure_item(
                             elements["btn"], texture_tag=config["inactive_tex"] #type: ignore
                         )
+
+            # Update time and energy statistics if connected
+            if self.is_connected and self.connection_start_time is not None:
+                elapsed = time.time() - self.connection_start_time
+
+                # Accumulate time instead of replacing
+                previous_time = self.stats_manager.get("time")
+                self.stats_manager.set("time", previous_time + int(elapsed))
+
+                # Accumulate energy consumption (150W)
+                energy_wh = (elapsed / 3600.0) * 150.0
+                previous_energy = self.stats_manager.get("energy")
+                self.stats_manager.set("energy", previous_energy + energy_wh)
+
+                # Reset the connection timer to avoid double counting
+                self.connection_start_time = time.time()
+
+                # Update GUI displays every second
+                current_time = time.time()
+                if current_time - self._last_stats_refresh >= 1.0:
+                    self._last_stats_refresh = current_time
+                    for key in ["time", "energy"]:
+                        tag = f"stat_val_{key}"
+                        if dpg.does_item_exist(tag):
+                            value = self.stats_manager.get(key)
+                            dpg.configure_item(
+                                tag,
+                                label=StatsManager.format_value(key, value)
+                            )
 
             dpg.render_dearpygui_frame()
 
