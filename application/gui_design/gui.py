@@ -154,8 +154,8 @@ class GUI:
                 "stat_dist_desc": "Total distance traveled by a mouse",
                 "stat_energy_title": "Energy wasted",
                 "stat_energy_desc": "Aproximated amount of energy used by the bot",
-                "stat_unknown_title": "???",
-                "stat_unknown_desc": "???",
+                "stat_unknown_title": "Times force stopped",
+                "stat_unknown_desc": "Amount of times force stop has been activated",
                 "stat_keys_title": "Keys pressed",
                 "stat_keys_desc": "Amount of key presses by a user",
                 "refresh": "Refresh",
@@ -203,8 +203,8 @@ class GUI:
                 "stat_dist_desc": "Całkowity dystans przebyty przez mysz",
                 "stat_energy_title": "Zużyta energia",
                 "stat_energy_desc": "Przybliżona ilość energii zużytej przez bota",
-                "stat_unknown_title": "???",
-                "stat_unknown_desc": "???",
+                "stat_unknown_title": "Wymuszone zatrzymania",
+                "stat_unknown_desc": "Ilość wymuszonych zatrzymań bota",
                 "stat_keys_title": "Wciśnięte klawisze",
                 "stat_keys_desc": "Ilość klawiszy wciśniętych przez użytkownika",
                 "refresh": "Odśwież",
@@ -590,6 +590,7 @@ class GUI:
             load_and_add("icons/stats/ikona_mouse.png", "tex_stat_mouse")
             load_and_add("icons/stats/ikona_dist.png", "tex_stat_dist")
             load_and_add("icons/stats/ikona_energy.png", "tex_stat_energy")
+            load_and_add("icons/stats/ikona_stop.png", "tex_stat_stop")
             load_and_add("icons/stats/ikona_keys.png", "tex_stat_keys")
 
     def toggle_sidebar(self, sender, app_data):
@@ -1730,7 +1731,7 @@ class GUI:
                     ("mouse", "tex_stat_mouse"),
                     ("dist", "tex_stat_dist"),
                     ("energy", "tex_stat_energy"),
-                    ("unknown", ""),
+                    ("unknown", "tex_stat_stop"),
                     ("keys", "tex_stat_keys"),
                 ]
 
@@ -2088,6 +2089,16 @@ class GUI:
         if self.mouse_blocker_pipe:
             self.mouse_blocker_pipe.send({"cmd": "START"})
 
+    def _increment_stat(self, key, amount=1):
+        """Helper function to immediately save and refresh a statistic."""
+        self.stats_manager.increment(key, amount)
+        if hasattr(self.stats_manager, 'save'):
+            self.stats_manager.save()
+        tag = f"stat_val_{key}"
+        if dpg.does_item_exist(tag):
+            val = self.stats_manager.get(key)
+            dpg.configure_item(tag, label=StatsManager.format_value(key, val))
+
     def on_stop(self, sender=None, app_data=None):
         """Stop the vision worker, deactivate mouse blocker, and emergency-stop the controller."""
         self.pipe.send({"cmd": "STOP"})
@@ -2099,12 +2110,26 @@ class GUI:
             )
             self.add_log("<System> EMERGENCY STOP ACTIVATED", color=[255, 0, 0])
 
+        # Stop calibration if running
+        if hasattr(self, 'cali_routine') and self.cali_routine is not None:
+            self.cali_routine.is_cancelled = True
+
+        self._increment_stat("unknown", 1)
+
     def run_calibration(self):
         """Run the calibration process in a separate thread to avoid blocking the UI."""
         if self.is_connected:
             self.add_log("<Calibration> Initializing calibration routine...", color=[255, 255, 80])
-            cali_routine = CalibrationRoutine(self)
-            cali_routine.run()
+            self.cali_routine = CalibrationRoutine(self)
+            self.cali_routine.run()
+
+            if not getattr(self.cali_routine, 'is_cancelled', False):
+                self._increment_stat("mouse", 1)
+                self.add_log("<Calibration> Calibration completed successfully.", color=[80, 255, 80])
+            else:
+                self.add_log("<Calibration> Calibration aborted by user.", color=[255, 80, 80])
+
+            self.cali_routine = None
         else:
             self.add_log("<Calibration> Please connect to the ESP32 first.", color=[255, 80, 80])
             print("Please connect to the ESP32 and run calibration again.")
@@ -2231,6 +2256,9 @@ class GUI:
                     display_text = f"[ {keys.upper()} ]" if keys else "[ BRAK ]"
                     if dpg.does_item_exist("current_keys_text"):
                         dpg.set_value("current_keys_text", display_text)
+
+                    if "p" in keys and "p" not in self.last_pressed_keys:
+                        self.on_stop()
 
                     if "/" in keys and "/" not in self.last_pressed_keys:
                         self.telemetry_enabled = not self.telemetry_enabled

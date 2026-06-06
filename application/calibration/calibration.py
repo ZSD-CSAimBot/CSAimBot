@@ -129,13 +129,15 @@ class CalibrationRoutine:
         """
         start_t = time.time()
 
-        # Increased timeout to 30 seconds due to slower precision creeping
         while self.running and time.time() - start_t < 30:
+            if getattr(self, 'is_cancelled', False):
+                self.send_command("-", 0)
+                return False
+
             mx, my = pyautogui.position()
             dx = target_x - mx
             dy = target_y - my
 
-            # Force ignoring the other axis when testing a specific vector
             if mode == "x_only":
                 dy = 0
             elif mode == "y_only":
@@ -143,7 +145,6 @@ class CalibrationRoutine:
 
             dist = math.hypot(dx, dy)
 
-            # Deadzone of 2 pixels for absolute precision
             if mode == "both" and abs(dx) <= 2 and abs(dy) <= 2:
                 break
             elif mode == "x_only" and abs(dx) <= 2:
@@ -152,49 +153,44 @@ class CalibrationRoutine:
                 break
 
             keys = ""
-            if dx > 2:
-                keys += "l"
-            elif dx < -2:
-                keys += "j"
+            if dx > 2: keys += "l"
+            elif dx < -2: keys += "j"
 
-            if dy > 2:
-                keys += "k"
-            elif dy < -2:
-                keys += "i"
+            if dy > 2: keys += "k"
+            elif dy < -2: keys += "i"
 
             if not keys:
                 break
 
-            # Adaptive speed and micro-pulsing algorithm
             if dist > 150:
-                self.send_command(keys, override_speed=65)
-                time.sleep(0.05)
+                self.send_command(keys, override_speed=40)
+                time.sleep(0.04)
+                self.send_command("-", 0)
+                time.sleep(0.06)
             elif dist > 40:
-                self.send_command(keys, override_speed=35)
-                time.sleep(0.05)
+                self.send_command(keys, override_speed=20)
+                time.sleep(0.03)
+                self.send_command("-", 0)
+                time.sleep(0.1)
             else:
-                # Precision mode (Creeping / Pulsing) - eliminates inertia and jitter
-                self.send_command(keys, override_speed=15)
-                time.sleep(0.02)  # Short movement pulse
-                self.send_command("-", 0)  # Hit the "brakes"
-                time.sleep(0.15)  # Wait for COMPLETE mechanical stabilization before next frame check
+                self.send_command(keys, override_speed=12)
+                time.sleep(0.02)
+                self.send_command("-", 0)
+                time.sleep(0.15)
 
         self.send_command("-", 0)
-        time.sleep(0.5)  # Final platform stabilization after movement ends
+        time.sleep(0.5)
+        return True
 
     def run(self):
         """Main execution flow for the calibration process."""
-
-        # Step 0: Read sensitivity from game files
-        #csgo_sens = self.get_csgo_sensitivity()
         csgo_sens = 2.5
 
         if self.gui.is_connected:
             self.gui.add_log("<Calibration> Resetting previous skew data on ESP32...", color=[255, 255, 80])
-            self.gui.comms_pipe.send({"cm111111111111111111112d": "SEND", "value": "CALIBRATION,1000,0.0"})
+            self.gui.comms_pipe.send({"cmd": "SEND", "value": "CALIBRATION,1000,0.0"})
             time.sleep(0.5)
 
-        # Generate image and coordinates
         img, points = self.create_calibration_image()
 
         window_name = "Calibration Routine"
@@ -206,9 +202,10 @@ class CalibrationRoutine:
         while True:
             cv2.imshow(window_name, img)
             key = cv2.waitKey(10) & 0xFF
-            if key == ord('['):
+            if key == ord('[') and not getattr(self, 'is_cancelled', False):
                 break
-            elif key == 27:
+            elif key == 27 or key == ord('p') or getattr(self, 'is_cancelled', False):
+                self.is_cancelled = True
                 cv2.destroyWindow(window_name)
                 self.gui.add_log("<Calibration> Canceled by user.", color=[255, 80, 80])
                 return
@@ -217,14 +214,18 @@ class CalibrationRoutine:
         # STAGE 1: X-AXIS CALIBRATION
         # ==========================================
         self.gui.add_log("<Calibration> [X] Aligning to left square...", color=[80, 255, 80])
-        self.precise_drive(points["left"][0], points["left"][1], mode="both")
-        time.sleep(1.5)  # Extended wait to ensure ESP32 serial data catches up fully
+        if not self.precise_drive(points["left"][0], points["left"][1], mode="both"):
+            cv2.destroyWindow(window_name)
+            return
+        time.sleep(1.5)
 
         start_mouse_x = pyautogui.position()
         start_phys_x = self.gui.pos_x
 
         self.gui.add_log("<Calibration> [X] Tracking to right square...", color=[80, 255, 80])
-        self.precise_drive(points["right"][0], points["right"][1], mode="x_only")
+        if not self.precise_drive(points["right"][0], points["right"][1], mode="x_only"):
+            cv2.destroyWindow(window_name)
+            return
         time.sleep(1.5)
 
         end_mouse_x = pyautogui.position()
@@ -234,71 +235,21 @@ class CalibrationRoutine:
         # STAGE 2: Y-AXIS CALIBRATION
         # ==========================================
         self.gui.add_log("<Calibration> [Y] Aligning to top square...", color=[80, 255, 80])
-        self.precise_drive(points["top"][0], points["top"][1], mode="both")
+        if not self.precise_drive(points["top"][0], points["top"][1], mode="both"):
+            cv2.destroyWindow(window_name)
+            return
         time.sleep(1.5)
 
         start_mouse_y = pyautogui.position()
         start_phys_y = self.gui.pos_y
 
         self.gui.add_log("<Calibration> [Y] Tracking down...", color=[80, 255, 80])
-        self.precise_drive(points["bottom"][0], points["bottom"][1], mode="y_only")
+        if not self.precise_drive(points["bottom"][0], points["bottom"][1], mode="y_only"):
+            cv2.destroyWindow(window_name)
+            return
         time.sleep(1.5)
 
         end_mouse_y = pyautogui.position()
         end_phys_y = self.gui.pos_y
 
         cv2.destroyWindow(window_name)
-
-        # ==========================================
-        # STAGE 3: MATHEMATICS AND CALCULATIONS
-        # ==========================================
-
-        # 1. X-axis analysis
-        dx_mouse_x = end_mouse_x[0] - start_mouse_x[0]
-        dy_mouse_x = end_mouse_x[1] - start_mouse_x[1]
-
-        theta_x_rad = math.atan2(dy_mouse_x, dx_mouse_x)
-
-        dx_phys_cm = abs(end_phys_x - start_phys_x)
-        dpi_x = (math.hypot(dx_mouse_x, dy_mouse_x) / (dx_phys_cm / 2.54)) if dx_phys_cm > 0 else 0
-
-        # 2. Y-axis analysis
-        dx_mouse_y = end_mouse_y[0] - start_mouse_y[0]
-        dy_mouse_y = end_mouse_y[1] - start_mouse_y[1]
-
-        # Ideal Y vector is (0, 1), its angle is 90 degrees (pi/2). The difference is the skew.
-        theta_y_rad = math.atan2(dy_mouse_y, dx_mouse_y) - (math.pi / 2)
-
-        dy_phys_cm = abs(end_phys_y - start_phys_y)
-        dpi_y = (math.hypot(dx_mouse_y, dy_mouse_y) / (dy_phys_cm / 2.54)) if dy_phys_cm > 0 else 0
-
-        # 3. Averaging
-        avg_theta_rad = (theta_x_rad + theta_y_rad) / 2
-        avg_dpi = (dpi_x + dpi_y) / 2
-
-        if avg_dpi < 0: avg_dpi = 0
-
-        # ==========================================
-        # 4. EDPI CALCULATION AND SENDING TO ESP32
-        # ==========================================
-
-        edpi = avg_dpi * csgo_sens
-
-        self.gui.add_log(
-            f"<Calibration> X Skew: {math.degrees(theta_x_rad):.2f}°, Y Skew: {math.degrees(theta_y_rad):.2f}°",
-            color=[80, 255, 255])
-        self.gui.add_log(f"<Calibration> Avg Skew Angle: {math.degrees(avg_theta_rad):.2f}°", color=[255, 255, 80])
-        self.gui.add_log(f"<Calibration> Base DPI: {avg_dpi:.0f} | Sens: {csgo_sens} -> eDPI: {edpi:.0f}",
-                         color=[255, 180, 80])
-
-        # Save parameters to memory
-        self.gui.calibration_angle = avg_theta_rad
-        self.gui.calibration_dpi = avg_dpi
-
-        # Send command to ESP32 in format: CALIBRATION,eDPI,skewAngle
-        if self.gui.is_connected:
-            command = f"CALIBRATION,{int(edpi)},{avg_theta_rad:.4f}"
-            self.gui.comms_pipe.send({"cmd": "SEND", "value": command})
-            self.gui.add_log("<Calibration> Data sent to ESP32! Calibration complete.", color=[80, 255, 80])
-        else:
-            self.gui.add_log("<Calibration> Not connected to ESP32! Data not sent.", color=[255, 80, 80])
