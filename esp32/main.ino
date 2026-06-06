@@ -1535,6 +1535,24 @@ void loop() {
         Serial.println(skewAngleRad, 4);
       }
     }
+    else if (data.substring(0, 4) == "PID,") {
+      int firstComma = data.indexOf(',', 0);
+      int secondComma = data.indexOf(',', firstComma + 1);
+      int thirdComma = data.indexOf(',', secondComma + 1);
+
+      if (firstComma > 0 && secondComma > 0 && thirdComma > 0) {
+        kpVision = data.substring(firstComma + 1, secondComma).toFloat();
+        kiVision = data.substring(secondComma + 1, thirdComma).toFloat();
+        kdVision = data.substring(thirdComma + 1).toFloat();
+
+        Serial.print("PID updated: Kp=");
+        Serial.print(kpVision);
+        Serial.print(" Ki=");
+        Serial.print(kiVision);
+        Serial.print(" Kd=");
+        Serial.println(kdVision);
+      }
+    }
     else if (data.length() > 0) {
       int commaIndexes[7] = {0, 0, 0, 0, 0, 0, 0};
       int commaIndex = 0;

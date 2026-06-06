@@ -39,6 +39,8 @@ class GUI:
         self.stats_manager = StatsManager()
         self._last_stats_refresh = 0
 
+        self.load_config()
+
         self.telemetry_enabled = False
         self.is_recording_trajectory = False
         self.trajectory_logger = TrajectoryLogger()
@@ -161,6 +163,9 @@ class GUI:
                 "refresh": "Refresh",
                 "axis_time": "Time",
                 "axis_dist": "Distance",
+                "txt_update_btn": "Update Settings",
+                "txt_update_ok": "Settings updated successfully",
+                "txt_update_err": "Error: Invalid values!",
             },
             "Polski": {
                 "nav_home": "Strona Główna",
@@ -210,6 +215,9 @@ class GUI:
                 "refresh": "Odśwież",
                 "axis_time": "Czas",
                 "axis_dist": "Dystans",
+                "txt_update_btn": "Aktualizuj Ustawienia",
+                "txt_update_ok": "Ustawienia pomyślnie zaktualizowane",
+                "txt_update_err": "Błąd: Nieprawidłowe wartości!",
             },
         }
         dpg.create_context()
@@ -243,6 +251,33 @@ class GUI:
 
         # Initialize and display available COM ports correctly
         self.refresh_ports()
+
+    def load_config(self):
+        """Load PID settings from a local JSON file."""
+        import json
+        base = os.path.dirname(os.path.abspath(__file__))
+        self.config_path = os.path.abspath(os.path.join(base, "..", "data", "config.json"))
+        os.makedirs(os.path.dirname(self.config_path), exist_ok=True)
+
+        # Default fallback values mirroring your screenshot
+        self.config = {"kp": 75.0, "ki": 6.0, "kd": 15.0}
+
+        if os.path.exists(self.config_path):
+            try:
+                with open(self.config_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    self.config.update(data)
+            except Exception:
+                pass
+
+    def save_config(self):
+        """Save PID settings to a local JSON file."""
+        import json
+        try:
+            with open(self.config_path, "w", encoding="utf-8") as f:
+                json.dump(self.config, f, indent=4)
+        except Exception as e:
+            print(f"Failed to save config: {e}")
 
     def rs(self, w=None, h=None, pos=None, wrap=None, tag=None):
         """Register base UI constraints for high-quality scaling logic."""
@@ -490,6 +525,14 @@ class GUI:
                 dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 5)
                 dpg.add_theme_style(dpg.mvStyleVar_ButtonTextAlign, 0.5, 0.5)
 
+        with dpg.theme() as self.gold_input_theme:
+            with dpg.theme_component(dpg.mvInputText):
+                dpg.add_theme_color(dpg.mvThemeCol_FrameBg, [255, 190, 25, 255])
+                dpg.add_theme_color(dpg.mvThemeCol_FrameBgHovered, [255, 200, 0, 255])
+                dpg.add_theme_color(dpg.mvThemeCol_FrameBgActive, [255, 200, 0, 255])
+                dpg.add_theme_color(dpg.mvThemeCol_Text, [0, 0, 0, 255])
+                dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 8)
+
         self.invisible_btn_theme = self.create_btn_theme(
             [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]
         )
@@ -713,6 +756,7 @@ class GUI:
             ("btn_set0_lmb", "set0"),
             ("btn_set0_rmb", "set0"),
             ("btn_set0_gripper", "set0"),
+            ("btn_update_settings", "txt_update_btn"),
         ]
         for tag, dict_key in button_tags:
             if dpg.does_item_exist(tag):
@@ -1687,39 +1731,84 @@ class GUI:
                             )
                             dpg.bind_item_theme(txt_port, self.white_text_theme)
 
-                            combo_port = dpg.add_combo(
+                            '''combo_port = dpg.add_combo(
                                 items=[],
                                 width=150,
                                 pos=[350, 13],
                                 callback=self.on_port_change,
                                 tag=self.rs(w=150, pos=[350, 13], tag="combo_port"),
+                            )'''
+                            combo_port = dpg.add_combo(
+                                items=[],
+                                width=180,
+                                pos=[400, 13],
+                                callback=self.on_port_change,
+                                tag=self.rs(w=180, pos=[400, 13], tag="combo_port"),
                             )
                             dpg.bind_item_theme(combo_port, self.gold_combo_theme)
-
-                            btn_refresh = dpg.add_button(
-                                label="Refresh",
-                                width=75,
-                                pos=[505, 13],
-                                callback=self.refresh_ports,
-                                tag=self.rs(
-                                    w=75, pos=[505, 13], tag="btn_refresh_ports"
-                                ),
-                            )
-                            dpg.bind_item_theme(btn_refresh, self.gray_btn_theme)
 
                         dpg.bind_item_theme(row_port, self.settings_row_theme)
                         dpg.add_spacer(height=10, tag=self.rs(h=10))
 
-                        for i in range(5):
-                            with dpg.child_window(
-                                    width=600,
-                                    height=50,
-                                    no_scrollbar=True,
-                                    tag=self.rs(600, 50),
-                            ) as row_empty:
-                                pass
-                            dpg.bind_item_theme(row_empty, self.settings_row_theme)
-                            dpg.add_spacer(height=10, tag=self.rs(h=10))
+                        with dpg.child_window(
+                                width=600,
+                                height=50,
+                                no_scrollbar=True,
+                                tag=self.rs(600, 50, tag="row_pid"),
+                        ) as row_pid:
+                            # Kp
+                            dpg.add_text("Kp:", tag=self.rs(pos=[20, 13]), pos=[20, 13])
+                            dpg.bind_item_theme(dpg.last_item(), self.white_text_theme)
+                            self.input_kp = dpg.add_input_text(
+                                default_value=str(self.config.get("kp", 135.0)),
+                                width=90, tag=self.rs(w=90, pos=[60, 13]), pos=[60, 13]
+                            )
+                            dpg.bind_item_theme(self.input_kp, self.gold_input_theme)
+
+                            # Ki
+                            dpg.add_text("Ki:", tag=self.rs(pos=[190, 13]), pos=[190, 13])
+                            dpg.bind_item_theme(dpg.last_item(), self.white_text_theme)
+                            self.input_ki = dpg.add_input_text(
+                                default_value=str(self.config.get("ki", 10.0)),
+                                width=90, tag=self.rs(w=90, pos=[225, 13]), pos=[225, 13]
+                            )
+                            dpg.bind_item_theme(self.input_ki, self.gold_input_theme)
+
+                            # Kd
+                            dpg.add_text("Kd:", tag=self.rs(pos=[360, 13]), pos=[360, 13])
+                            dpg.bind_item_theme(dpg.last_item(), self.white_text_theme)
+                            self.input_kd = dpg.add_input_text(
+                                default_value=str(self.config.get("kd", 5.0)),
+                                width=90, tag=self.rs(w=90, pos=[400, 13]), pos=[400, 13]
+                            )
+                            dpg.bind_item_theme(self.input_kd, self.gold_input_theme)
+
+                        dpg.bind_item_theme(row_pid, self.settings_row_theme)
+
+                        # Znacznie powiększony spacer zepchnie przycisk do dołu ekranu
+                        dpg.add_spacer(height=250, tag=self.rs(h=250))
+
+                        # Status Message logic
+                        with dpg.group(horizontal=True):
+                            dpg.add_spacer(width=200, tag=self.rs(w=200))
+                            self.txt_settings_status = dpg.add_text(
+                                "",
+                                color=[80, 255, 80],
+                                show=False,
+                                tag=self.rs(tag="txt_settings_status")
+                            )
+
+                        dpg.add_spacer(height=10, tag=self.rs(h=10))
+
+                        # Update Button
+                        btn_update = dpg.add_button(
+                            label="Update Settings",
+                            width=600,
+                            height=50,
+                            callback=self.on_update_settings,
+                            tag=self.rs(600, 50, tag="btn_update_settings")
+                        )
+                        dpg.bind_item_theme(btn_update, self.gold_btn_theme)
 
             with dpg.group(tag="page_stat", show=False):
                 dpg.add_spacer(height=35, tag=self.rs(h=35))
@@ -2092,12 +2181,31 @@ class GUI:
     def _increment_stat(self, key, amount=1):
         """Helper function to immediately save and refresh a statistic."""
         self.stats_manager.increment(key, amount)
-        if hasattr(self.stats_manager, 'save'):
-            self.stats_manager.save()
+
         tag = f"stat_val_{key}"
         if dpg.does_item_exist(tag):
             val = self.stats_manager.get(key)
             dpg.configure_item(tag, label=StatsManager.format_value(key, val))
+
+    def _commit_time_and_energy(self):
+        """Calculates and saves time & energy ONLY upon disconnect or app exit."""
+        if hasattr(self, 'connection_start_time') and self.connection_start_time is not None:
+            elapsed = time.time() - self.connection_start_time
+            if elapsed > 0:
+                self.stats_manager.increment("time", int(elapsed))
+                energy_wh = (elapsed / 3600.0) * 150.0
+                self.stats_manager.increment("energy", energy_wh)
+
+                for key in ["time", "energy"]:
+                    tag = f"stat_val_{key}"
+                    if dpg.does_item_exist(tag):
+                        value = self.stats_manager.get(key)
+                        dpg.configure_item(tag, label=StatsManager.format_value(key, value))
+
+                if hasattr(self.stats_manager, 'save'):
+                    self.stats_manager.save()
+
+            self.connection_start_time = time.time()
 
     def on_stop(self, sender=None, app_data=None):
         """Stop the vision worker, deactivate mouse blocker, and emergency-stop the controller."""
@@ -2245,7 +2353,12 @@ class GUI:
                     # Track connection time for statistics
                     if self.is_connected:
                         self.connection_start_time = time.time()
+                        self.comms_pipe.send({
+                            "cmd": "SEND",
+                            "value": f"PID,{self.config.get('kp', 75.0)},{self.config.get('ki', 6.0)},{self.config.get('kd', 15.0)}"
+                        })
                     else:
+                        self._commit_time_and_energy()
                         self.connection_start_time = None
 
                     self.update_connection_display()
@@ -2373,8 +2486,6 @@ class GUI:
                                     tag,
                                     label=StatsManager.format_value(key, current_val)
                                 )
-                        if hasattr(self.stats_manager, 'save'):
-                            self.stats_manager.save()
                 elif msg.get("type") == "stat_update":
                     data = msg.get("data", {})
                     for key, value in data.items():
@@ -2440,7 +2551,7 @@ class GUI:
                     f"{self.current_speed},{target_detected},{deadzone_x},{deadzone_y}"
                 )
 
-                if command != last_sent_command or (now - last_send_time) >= 0.02:
+                if command != last_sent_command: #or (now - last_send_time) >= 0.02
                     self.comms_pipe.send(
                         {
                             "cmd": "SEND",
@@ -2501,6 +2612,41 @@ class GUI:
             if now - self._last_stats_refresh >= 5:
                 self._last_stats_refresh = now
                 self.refresh_stats_display()
+
+    def on_update_settings(self, sender, app_data):
+        """Save PID settings to JSON and send to ESP32."""
+        t = self.lang_dict[self.current_lang]
+        try:
+            # Parse inputs cleanly (replacing commas to prevent float errors based on local keyboard layouts)
+            kp = float(dpg.get_value(self.input_kp).replace(",", "."))
+            ki = float(dpg.get_value(self.input_ki).replace(",", "."))
+            kd = float(dpg.get_value(self.input_kd).replace(",", "."))
+
+            # Store to dict and save JSON
+            self.config["kp"] = kp
+            self.config["ki"] = ki
+            self.config["kd"] = kd
+            self.save_config()
+
+            # Broadcast to ESP32
+            if self.is_connected:
+                self.comms_pipe.send({"cmd": "SEND", "value": f"PID,{kp},{ki},{kd}"})
+
+            # Show success message
+            dpg.set_value(self.txt_settings_status, t["txt_update_ok"])
+            dpg.configure_item(self.txt_settings_status, color=[80, 255, 80], show=True)
+
+        except ValueError:
+            # Show error message
+            dpg.set_value(self.txt_settings_status, t["txt_update_err"])
+            dpg.configure_item(self.txt_settings_status, color=[255, 80, 80], show=True)
+
+        # Hide the status message smoothly after 3 seconds
+        def hide_status():
+            if dpg.does_item_exist(self.txt_settings_status):
+                dpg.configure_item(self.txt_settings_status, show=False)
+
+        threading.Timer(3.0, hide_status).start()
 
     def run(self):
         """Show the viewport and enter the main UI loop."""
@@ -2593,36 +2739,12 @@ class GUI:
                         dpg.configure_item(
                             elements["btn"], texture_tag=config["inactive_tex"] #type: ignore
                         )
-
-            # Update time and energy statistics if connected
-            if self.is_connected and self.connection_start_time is not None:
-                current_time = time.time()
-                elapsed = current_time - self.connection_start_time
-
-                # Process logic only if at least 1 second has passed to save CPU
-                if elapsed >= 1.0:
-                    # Update internal stats storage
-                    self.stats_manager.increment("time", int(elapsed))
-
-                    energy_wh = (elapsed / 3600.0) * 150.0
-                    self.stats_manager.increment("energy", energy_wh)
-
-                    # Update the baseline timer
-                    self.connection_start_time = current_time
-
-                    # Update GUI displays
-                    if current_time - self._last_stats_refresh >= 1.0:
-                        self._last_stats_refresh = current_time
-                        for key in ["time", "energy"]:
-                            tag = f"stat_val_{key}"
-                            if dpg.does_item_exist(tag):
-                                value = self.stats_manager.get(key)
-                                dpg.configure_item(
-                                    tag,
-                                    label=StatsManager.format_value(key, value)
-                                )
-
             dpg.render_dearpygui_frame()
+
+        if hasattr(self, 'is_connected') and self.is_connected:
+            self._commit_time_and_energy()
+        elif hasattr(self.stats_manager, 'save'):
+            self.stats_manager.save()
 
         self.running = False
         self.pipe.send({"cmd": "QUIT"})

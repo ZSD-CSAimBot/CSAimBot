@@ -130,6 +130,7 @@ class CalibrationRoutine:
         start_t = time.time()
 
         while self.running and time.time() - start_t < 30:
+            # Immediate abort if 'p' was pressed in the main GUI
             if getattr(self, 'is_cancelled', False):
                 self.send_command("-", 0)
                 return False
@@ -145,6 +146,7 @@ class CalibrationRoutine:
 
             dist = math.hypot(dx, dy)
 
+            # Deadzone of 2 pixels for absolute precision
             if mode == "both" and abs(dx) <= 2 and abs(dy) <= 2:
                 break
             elif mode == "x_only" and abs(dx) <= 2:
@@ -162,18 +164,15 @@ class CalibrationRoutine:
             if not keys:
                 break
 
+            # Adaptive speed and micro-pulsing algorithm
             if dist > 150:
-                self.send_command(keys, override_speed=40)
-                time.sleep(0.04)
-                self.send_command("-", 0)
-                time.sleep(0.06)
+                self.send_command(keys, override_speed=65)
+                time.sleep(0.05)
             elif dist > 40:
-                self.send_command(keys, override_speed=20)
-                time.sleep(0.03)
-                self.send_command("-", 0)
-                time.sleep(0.1)
+                self.send_command(keys, override_speed=35)
+                time.sleep(0.05)
             else:
-                self.send_command(keys, override_speed=12)
+                self.send_command(keys, override_speed=15)
                 time.sleep(0.02)
                 self.send_command("-", 0)
                 time.sleep(0.15)
@@ -192,11 +191,9 @@ class CalibrationRoutine:
             time.sleep(0.5)
 
         img, points = self.create_calibration_image()
-
         window_name = "Calibration Routine"
         cv2.namedWindow(window_name, cv2.WND_PROP_FULLSCREEN)
         cv2.setWindowProperty(window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
-
         self.gui.add_log("<Calibration> Window opened. Press '[' to start.", color=[255, 255, 80])
 
         while True:
@@ -204,7 +201,7 @@ class CalibrationRoutine:
             key = cv2.waitKey(10) & 0xFF
             if key == ord('[') and not getattr(self, 'is_cancelled', False):
                 break
-            elif key == 27 or key == ord('p') or getattr(self, 'is_cancelled', False):
+            elif key == 27 or getattr(self, 'is_cancelled', False):
                 self.is_cancelled = True
                 cv2.destroyWindow(window_name)
                 self.gui.add_log("<Calibration> Canceled by user.", color=[255, 80, 80])
@@ -253,3 +250,41 @@ class CalibrationRoutine:
         end_phys_y = self.gui.pos_y
 
         cv2.destroyWindow(window_name)
+
+        # ==========================================
+        # STAGE 3: MATHEMATICS AND CALCULATIONS
+        # ==========================================
+        dx_mouse_x = end_mouse_x[0] - start_mouse_x[0]
+        dy_mouse_x = end_mouse_x[1] - start_mouse_x[1]
+        theta_x_rad = math.atan2(dy_mouse_x, dx_mouse_x)
+        dx_phys_cm = abs(end_phys_x - start_phys_x)
+        dpi_x = (math.hypot(dx_mouse_x, dy_mouse_x) / (dx_phys_cm / 2.54)) if dx_phys_cm > 0 else 0
+
+        dx_mouse_y = end_mouse_y[0] - start_mouse_y[0]
+        dy_mouse_y = end_mouse_y[1] - start_mouse_y[1]
+        theta_y_rad = math.atan2(dy_mouse_y, dx_mouse_y) - (math.pi / 2)
+        dy_phys_cm = abs(end_phys_y - start_phys_y)
+        dpi_y = (math.hypot(dx_mouse_y, dy_mouse_y) / (dy_phys_cm / 2.54)) if dy_phys_cm > 0 else 0
+
+        avg_theta_rad = (theta_x_rad + theta_y_rad) / 2
+        avg_dpi = (dpi_x + dpi_y) / 2
+        if avg_dpi < 0: avg_dpi = 0
+
+        # ==========================================
+        # STAGE 4: EDPI CALCULATION AND SENDING
+        # ==========================================
+        edpi = avg_dpi * csgo_sens
+
+        self.gui.add_log(f"<Calibration> X Skew: {math.degrees(theta_x_rad):.2f}°, Y Skew: {math.degrees(theta_y_rad):.2f}°", color=[80, 255, 255])
+        self.gui.add_log(f"<Calibration> Avg Skew Angle: {math.degrees(avg_theta_rad):.2f}°", color=[255, 255, 80])
+        self.gui.add_log(f"<Calibration> Base DPI: {avg_dpi:.0f} | Sens: {csgo_sens} -> eDPI: {edpi:.0f}", color=[255, 180, 80])
+
+        self.gui.calibration_angle = avg_theta_rad
+        self.gui.calibration_dpi = avg_dpi
+
+        if self.gui.is_connected:
+            command = f"CALIBRATION,{int(edpi)},{avg_theta_rad:.4f}"
+            self.gui.comms_pipe.send({"cmd": "SEND", "value": command})
+            self.gui.add_log("<Calibration> Data sent to ESP32! Calibration complete.", color=[80, 255, 80])
+        else:
+            self.gui.add_log("<Calibration> Not connected to ESP32! Data not sent.", color=[255, 80, 80])
