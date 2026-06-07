@@ -25,6 +25,7 @@ class CalibrationRoutine:
     def __init__(self, gui_instance):
         self.gui = gui_instance
         self.running = True
+        self.is_cancelled = False
 
     def send_command(self, keys, override_speed=75):
         """Sends simulated key presses to the ESP32 via the comms pipe."""
@@ -39,10 +40,10 @@ class CalibrationRoutine:
         Sorts by modified date to guarantee reading from the active Steam account.
         """
         possible_paths = [
-            r"C:\Program Files (x86)\Steam\userdata\*\730\local\cfg\config.cfg",
-            r"C:\Program Files\Steam\userdata\*\730\local\cfg\config.cfg",
-            r"D:\Steam\userdata\*\730\local\cfg\config.cfg",
-            r"E:\Steam\userdata\*\730\local\cfg\config.cfg"
+            r"C:\Program Files (x86)\Steam\userdata\*\4465480\local\cfg\config.cfg",
+            r"C:\Program Files\Steam\userdata\*\4465480\local\cfg\config.cfg",
+            r"D:\Steam\userdata\*\4465480\local\cfg\config.cfg",
+            r"E:\Steam\userdata\*\4465480\local\cfg\config.cfg"
         ]
 
         found_configs = []
@@ -57,7 +58,7 @@ class CalibrationRoutine:
                 try:
                     with open(match, 'r', encoding='utf-8', errors='ignore') as f:
                         content = f.read()
-                        sens_match = re.search(r'(?m)^sensitivity\s+"([0-9.]+)"', content)
+                        sens_match = re.search(r'(?i)(?m)^sensitivity\s+["\']?([0-9.]+)["\']?', content)
                         if sens_match:
                             self.gui.add_log(f"<Calibration> Auto-detected active config: {match}", color=[80, 255, 80])
                             return float(sens_match.group(1))
@@ -79,7 +80,7 @@ class CalibrationRoutine:
             try:
                 with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                     content = f.read()
-                    sens_match = re.search(r'(?m)^sensitivity\s+"([0-9.]+)"', content)
+                    sens_match = re.search(r'(?i)(?m)^sensitivity\s+["\']?([0-9.]+)["\']?', content)
                     if sens_match:
                         self.gui.add_log(f"<Calibration> Loaded config from: {file_path}", color=[80, 255, 80])
                         return float(sens_match.group(1))
@@ -90,47 +91,34 @@ class CalibrationRoutine:
         return 1.5
 
     def create_calibration_image(self):
-        """Generates a fullscreen calibration image dynamically."""
-        # Get current screen resolution
+        """Creates a black fullscreen image with red target squares."""
         screen_w, screen_h = pyautogui.size()
-
-        # Create a black background
         img = np.zeros((screen_h, screen_w, 3), dtype=np.uint8)
 
         cx, cy = screen_w // 2, screen_h // 2
+        offset_x = int(screen_w * 0.3)
+        offset_y = int(screen_h * 0.3)
 
-        # Draw white grid lines
-        cv2.line(img, (0, cy), (screen_w, cy), (255, 255, 255), 2)
-        cv2.line(img, (cx, 0), (cx, screen_h), (255, 255, 255), 2)
-
-        # Calculate distance of points from the center (40% of the smaller dimension)
-        offset = int(min(screen_w, screen_h) * 0.4)
-
-        # Define exact mathematical coordinates
         points = {
-            "center": (cx, cy),
-            "left": (cx - offset, cy),
-            "right": (cx + offset, cy),
-            "top": (cx, cy - offset),
-            "bottom": (cx, cy + offset)
+            "left": (cx - offset_x, cy),
+            "right": (cx + offset_x, cy),
+            "top": (cx, cy - offset_y),
+            "bottom": (cx, cy + offset_y)
         }
 
-        # Draw red squares (BGR in OpenCV)
-        sz = 8
-        for name, (px, py) in points.items():
-            cv2.rectangle(img, (px - sz, py - sz), (px + sz, py + sz), (0, 0, 255), -1)
+        for name, pt in points.items():
+            cv2.rectangle(img, (pt[0] - 15, pt[1] - 15), (pt[0] + 15, pt[1] + 15), (0, 0, 255), -1)
 
         return img, points
 
     def precise_drive(self, target_x, target_y, mode="both"):
         """
-        Drives the robot to the target with high precision.
-        mode can be: "both" (X and Y), "x_only" (horizontal track), "y_only" (vertical track)
+        Drives the robot to the target using slow, deliberate steps.
+        Completely bypasses PID and acts at its own independent pace.
         """
         start_t = time.time()
 
         while self.running and time.time() - start_t < 30:
-            # Immediate abort if 'p' was pressed in the main GUI
             if getattr(self, 'is_cancelled', False):
                 self.send_command("-", 0)
                 return False
@@ -146,7 +134,6 @@ class CalibrationRoutine:
 
             dist = math.hypot(dx, dy)
 
-            # Deadzone of 2 pixels for absolute precision
             if mode == "both" and abs(dx) <= 2 and abs(dy) <= 2:
                 break
             elif mode == "x_only" and abs(dx) <= 2:
@@ -155,27 +142,35 @@ class CalibrationRoutine:
                 break
 
             keys = ""
-            if dx > 2: keys += "l"
-            elif dx < -2: keys += "j"
+            if dx > 2:
+                keys += "l"
+            elif dx < -2:
+                keys += "j"
 
-            if dy > 2: keys += "k"
-            elif dy < -2: keys += "i"
+            if dy > 2:
+                keys += "k"
+            elif dy < -2:
+                keys += "i"
 
             if not keys:
                 break
 
-            # Adaptive speed and micro-pulsing algorithm
+            # PULSE DRIVE - Slow, hard steps
             if dist > 150:
                 self.send_command(keys, override_speed=65)
-                time.sleep(0.05)
+                time.sleep(0.08)
+                self.send_command("-", 0)
+                time.sleep(0.1)
             elif dist > 40:
                 self.send_command(keys, override_speed=35)
                 time.sleep(0.05)
+                self.send_command("-", 0)
+                time.sleep(0.15)
             else:
                 self.send_command(keys, override_speed=15)
                 time.sleep(0.02)
                 self.send_command("-", 0)
-                time.sleep(0.15)
+                time.sleep(0.2)
 
         self.send_command("-", 0)
         time.sleep(0.5)
@@ -183,11 +178,11 @@ class CalibrationRoutine:
 
     def run(self):
         """Main execution flow for the calibration process."""
-        csgo_sens = 2.5
+        csgo_sens = self.get_csgo_sensitivity()
 
         if self.gui.is_connected:
             self.gui.add_log("<Calibration> Resetting previous skew data on ESP32...", color=[255, 255, 80])
-            self.gui.comms_pipe.send({"cmd": "SEND", "value": "CALIBRATION,1000,0.0"})
+            self.gui.comms_pipe.send({"cmd": "SEND", "value": "CALIBRATION,1000,0.0,0.0"})
             time.sleep(0.5)
 
         img, points = self.create_calibration_image()
@@ -266,24 +261,34 @@ class CalibrationRoutine:
         dy_phys_cm = abs(end_phys_y - start_phys_y)
         dpi_y = (math.hypot(dx_mouse_y, dy_mouse_y) / (dy_phys_cm / 2.54)) if dy_phys_cm > 0 else 0
 
-        avg_theta_rad = (theta_x_rad + theta_y_rad) / 2
-        avg_dpi = (dpi_x + dpi_y) / 2
-        if avg_dpi < 0: avg_dpi = 0
+        raw_dpi = (dpi_x + dpi_y) / 2
+        if raw_dpi < 0: raw_dpi = 0
+
+        # Rounding DPI to nearest 100 (e.g. 824 -> 800, 851 -> 900)
+        rounded_dpi = int(round(raw_dpi / 100.0) * 100)
+        if rounded_dpi == 0: rounded_dpi = 100  # Fallback safety
 
         # ==========================================
         # STAGE 4: EDPI CALCULATION AND SENDING
         # ==========================================
-        edpi = avg_dpi * csgo_sens
+        edpi = rounded_dpi * csgo_sens
 
-        self.gui.add_log(f"<Calibration> X Skew: {math.degrees(theta_x_rad):.2f}°, Y Skew: {math.degrees(theta_y_rad):.2f}°", color=[80, 255, 255])
-        self.gui.add_log(f"<Calibration> Avg Skew Angle: {math.degrees(avg_theta_rad):.2f}°", color=[255, 255, 80])
-        self.gui.add_log(f"<Calibration> Base DPI: {avg_dpi:.0f} | Sens: {csgo_sens} -> eDPI: {edpi:.0f}", color=[255, 180, 80])
+        self.gui.add_log(
+            f"<Calibration> X Skew: {math.degrees(theta_x_rad):.2f}°, Y Skew: {math.degrees(theta_y_rad):.2f}°",
+            color=[80, 255, 255])
+        self.gui.add_log(f"<Calibration> Detected {raw_dpi:.0f} DPI -> Rounded to {rounded_dpi} DPI",
+                         color=[255, 255, 80])
+        self.gui.add_log(f"<Calibration> Base DPI: {rounded_dpi} | Sens: {csgo_sens} -> eDPI: {edpi:.0f}",
+                         color=[255, 180, 80])
 
-        self.gui.calibration_angle = avg_theta_rad
-        self.gui.calibration_dpi = avg_dpi
+        # Save parameters
+        self.gui.calibration_angle_x = theta_x_rad
+        self.gui.calibration_angle_y = theta_y_rad
+        self.gui.calibration_dpi = rounded_dpi
 
         if self.gui.is_connected:
-            command = f"CALIBRATION,{int(edpi)},{avg_theta_rad:.4f}"
+            # Send 4 parameters with negative angles to invert the coordinate system vector
+            command = f"CALIBRATION,{int(edpi)},{-theta_x_rad:.4f},{-theta_y_rad:.4f}"
             self.gui.comms_pipe.send({"cmd": "SEND", "value": command})
             self.gui.add_log("<Calibration> Data sent to ESP32! Calibration complete.", color=[80, 255, 80])
         else:

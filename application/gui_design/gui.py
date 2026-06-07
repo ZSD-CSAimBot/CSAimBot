@@ -12,9 +12,10 @@ import serial.tools.list_ports
 # X is the end stop near the motor.
 # Y is the carriage axis with the gripper.
 from utils.json_utils import StatsManager
-#from calibration.map_echo import CSGOTelemetry
+# from calibration.map_echo import CSGOTelemetry
 from calibration.calibration import CalibrationRoutine
 from utils.traj_log import TrajectoryLogger
+
 
 class GUI:
     """Main Dear PyGui application wrapper."""
@@ -260,7 +261,8 @@ class GUI:
         os.makedirs(os.path.dirname(self.config_path), exist_ok=True)
 
         # Default fallback values mirroring your screenshot
-        self.config = {"kp": 75.0, "ki": 6.0, "kd": 15.0}
+        self.config = {"kp": 75.0, "ki": 6.0, "kd": 15.0, "output_deadband": 0.9, "min_tracking_speed": 3,
+                       "vision_accel_limit": 10}
 
         if os.path.exists(self.config_path):
             try:
@@ -307,10 +309,10 @@ class GUI:
 
             # Switch to the appropriate font, avoiding ugly blur
             if (
-                hasattr(self, "font_720")
-                and self.font_720
-                and hasattr(self, "font_1080")
-                and self.font_1080
+                    hasattr(self, "font_720")
+                    and self.font_720
+                    and hasattr(self, "font_1080")
+                    and self.font_1080
             ):
                 dpg.bind_font(
                     self.font_1080 if self.current_scale > 1.1 else self.font_720
@@ -538,7 +540,7 @@ class GUI:
         )
 
     def create_btn_theme(
-        self, color, hover_color, active_color, text_color=[255, 255, 255]
+            self, color, hover_color, active_color, text_color=[255, 255, 255]
     ):
         """Create a button theme.
 
@@ -666,7 +668,7 @@ class GUI:
             dpg.configure_item(txt, show=self.sidebar_expanded)
 
         if dpg.does_alias_exist("group_conn_icon") and dpg.does_alias_exist(
-            "group_conn_full"
+                "group_conn_full"
         ):
             dpg.configure_item("group_conn_icon", show=not self.sidebar_expanded)
             dpg.configure_item("group_conn_full", show=self.sidebar_expanded)
@@ -805,7 +807,7 @@ class GUI:
             dpg.configure_item("control_plot_y", label=t["axis_dist"])
 
         if dpg.does_item_exist("speed_text_label_control") and dpg.does_item_exist(
-            "slider_speed_control"
+                "slider_speed_control"
         ):
             curr_speed = dpg.get_value("slider_speed_control")
             dpg.set_value("speed_text_label_control", f"{t['speed']}: {curr_speed}%")
@@ -835,11 +837,11 @@ class GUI:
             display_text = "Disconnecting..."
 
         if hasattr(self, "btn_connect_icon") and dpg.does_item_exist(
-            self.btn_connect_icon
+                self.btn_connect_icon
         ):
             dpg.configure_item(self.btn_connect_icon, texture_tag=icon_texture)
         if hasattr(self, "btn_connect_full") and dpg.does_item_exist(
-            self.btn_connect_full
+                self.btn_connect_full
         ):
             dpg.configure_item(self.btn_connect_full, texture_tag=full_texture)
         if hasattr(self, "conn_text") and dpg.does_item_exist(self.conn_text):
@@ -926,12 +928,12 @@ class GUI:
         """Construct the full Dear PyGui interface."""
         dpg.bind_theme(self.global_theme)
         with dpg.window(
-            tag=self.rs(self.width, self.height, tag="window_root"),
-            width=self.width,
-            height=self.height,
-            no_title_bar=True,
-            no_resize=True,
-            no_move=True,
+                tag=self.rs(self.width, self.height, tag="window_root"),
+                width=self.width,
+                height=self.height,
+                no_title_bar=True,
+                no_resize=True,
+                no_move=True,
         ):
             dpg.bind_item_theme("window_root", self.root_theme)
 
@@ -1026,7 +1028,7 @@ class GUI:
                             dpg.add_spacer(width=60, tag=self.rs(w=60))
 
                             with dpg.child_window(
-                                width=470, height=220, tag=self.rs(470, 220)
+                                    width=470, height=220, tag=self.rs(470, 220)
                             ):
                                 dpg.add_spacer(height=10, tag=self.rs(h=10))
                                 with dpg.group(horizontal=True):
@@ -1348,13 +1350,13 @@ class GUI:
 
                                 # SPEED SLIDER RESTORED
                                 with dpg.table(
-                                    header_row=False,
-                                    width=470,
-                                    borders_innerH=False,
-                                    borders_outerH=False,
-                                    borders_innerV=False,
-                                    borders_outerV=False,
-                                    tag=self.rs(w=470),
+                                        header_row=False,
+                                        width=470,
+                                        borders_innerH=False,
+                                        borders_outerH=False,
+                                        borders_innerV=False,
+                                        borders_outerV=False,
+                                        tag=self.rs(w=470),
                                 ):
                                     dpg.add_table_column(
                                         width_fixed=True,
@@ -1784,9 +1786,45 @@ class GUI:
                             dpg.bind_item_theme(self.input_kd, self.gold_input_theme)
 
                         dpg.bind_item_theme(row_pid, self.settings_row_theme)
+                        dpg.add_spacer(height=10, tag=self.rs(h=10))
 
-                        # Znacznie powiększony spacer zepchnie przycisk do dołu ekranu
-                        dpg.add_spacer(height=250, tag=self.rs(h=250))
+                        with dpg.child_window(
+                                width=600,
+                                height=50,
+                                no_scrollbar=True,
+                                tag=self.rs(600, 50, tag="row_tracking_tune"),
+                        ) as row_tracking_tune:
+                            # Output deadband
+                            dpg.add_text("Deadband:", tag=self.rs(pos=[20, 13]), pos=[20, 13])
+                            dpg.bind_item_theme(dpg.last_item(), self.white_text_theme)
+                            self.input_output_deadband = dpg.add_input_text(
+                                default_value=str(self.config.get("output_deadband", 0.9)),
+                                width=70, tag=self.rs(w=70, pos=[110, 13]), pos=[110, 13]
+                            )
+                            dpg.bind_item_theme(self.input_output_deadband, self.gold_input_theme)
+
+                            # Minimum tracking speed
+                            dpg.add_text("Min speed:", tag=self.rs(pos=[205, 13]), pos=[205, 13])
+                            dpg.bind_item_theme(dpg.last_item(), self.white_text_theme)
+                            self.input_min_tracking_speed = dpg.add_input_text(
+                                default_value=str(self.config.get("min_tracking_speed", 3)),
+                                width=70, tag=self.rs(w=70, pos=[300, 13]), pos=[300, 13]
+                            )
+                            dpg.bind_item_theme(self.input_min_tracking_speed, self.gold_input_theme)
+
+                            # Acceleration limit
+                            dpg.add_text("Accel:", tag=self.rs(pos=[400, 13]), pos=[400, 13])
+                            dpg.bind_item_theme(dpg.last_item(), self.white_text_theme)
+                            self.input_vision_accel_limit = dpg.add_input_text(
+                                default_value=str(self.config.get("vision_accel_limit", 10)),
+                                width=70, tag=self.rs(w=70, pos=[465, 13]), pos=[465, 13]
+                            )
+                            dpg.bind_item_theme(self.input_vision_accel_limit, self.gold_input_theme)
+
+                        dpg.bind_item_theme(row_tracking_tune, self.settings_row_theme)
+
+                        # Spacer keeps the update button near the lower part of the settings panel
+                        dpg.add_spacer(height=190, tag=self.rs(h=190))
 
                         # Status Message logic
                         with dpg.group(horizontal=True):
@@ -1833,7 +1871,7 @@ class GUI:
                                     idx = row * 4 + col
                                     c_id, c_tex = card_data[idx]
                                     with dpg.child_window(
-                                        width=255, height=295, tag=self.rs(255, 295)
+                                            width=255, height=295, tag=self.rs(255, 295)
                                     ) as card_win:
                                         dpg.add_spacer(height=5, tag=self.rs(h=5))
                                         if c_tex:
@@ -1893,14 +1931,14 @@ class GUI:
                             if row == 0:
                                 dpg.add_spacer(height=20, tag=self.rs(h=20))
         with dpg.window(
-            tag=self.rs(self.width, self.height, tag="window_dim"),
-            width=self.width,
-            height=self.height,
-            pos=(0, 0),
-            no_title_bar=True,
-            no_resize=True,
-            no_move=True,
-            show=False,
+                tag=self.rs(self.width, self.height, tag="window_dim"),
+                width=self.width,
+                height=self.height,
+                pos=(0, 0),
+                no_title_bar=True,
+                no_resize=True,
+                no_move=True,
+                show=False,
         ):
             dpg.bind_item_theme("window_dim", self.dim_theme)
             dpg.add_button(
@@ -1912,21 +1950,21 @@ class GUI:
             dpg.bind_item_theme(dpg.last_item(), self.invisible_btn_theme)
 
         with dpg.window(
-            tag=self.rs(60, self.height, tag="window_sidebar"),
-            width=60,
-            height=self.height,
-            pos=(0, 0),
-            no_title_bar=True,
-            no_resize=True,
-            no_move=True,
+                tag=self.rs(60, self.height, tag="window_sidebar"),
+                width=60,
+                height=self.height,
+                pos=(0, 0),
+                no_title_bar=True,
+                no_resize=True,
+                no_move=True,
         ):
             dpg.bind_item_theme("window_sidebar", self.sidebar_theme)
             with dpg.child_window(
-                tag=self.rs(60, self.height, tag="sidebar_child"),
-                width=60,
-                height=self.height,
-                border=False,
-                no_scrollbar=True,
+                    tag=self.rs(60, self.height, tag="sidebar_child"),
+                    width=60,
+                    height=self.height,
+                    border=False,
+                    no_scrollbar=True,
             ):
                 self.nav_texts = []
                 with dpg.group(horizontal=True):
@@ -2247,7 +2285,7 @@ class GUI:
         """Start calibration in the vision worker."""
         print("Starting calibration...")
         threading.Thread(target=self.run_calibration, daemon=True).start()
-    
+
     def on_start_sim(self, sender=None, app_data=None):
         """Request simulation start."""
         self.simulation_state = "starting"
@@ -2342,7 +2380,7 @@ class GUI:
                     dpg.set_value("series_vision_dist", [self.plot_vision_time_data, self.plot_vision_dist_data])
                     dpg.fit_axis_data("control_plot_x")
                     dpg.fit_axis_data("control_plot_y")
-                    
+
             while self.comms_pipe.poll():
                 msg = self.comms_pipe.recv()
 
@@ -2356,6 +2394,14 @@ class GUI:
                         self.comms_pipe.send({
                             "cmd": "SEND",
                             "value": f"PID,{self.config.get('kp', 75.0)},{self.config.get('ki', 6.0)},{self.config.get('kd', 15.0)}"
+                        })
+                        self.comms_pipe.send({
+                            "cmd": "SEND",
+                            "value": (
+                                f"TUNE,{self.config.get('output_deadband', 0.9)},"
+                                f"{self.config.get('min_tracking_speed', 3)},"
+                                f"{self.config.get('vision_accel_limit', 10)}"
+                            )
                         })
                     else:
                         self._commit_time_and_energy()
@@ -2551,7 +2597,7 @@ class GUI:
                     f"{self.current_speed},{target_detected},{deadzone_x},{deadzone_y}"
                 )
 
-                if command != last_sent_command: #or (now - last_send_time) >= 0.02
+                if command != last_sent_command:  # or (now - last_send_time) >= 0.015
                     self.comms_pipe.send(
                         {
                             "cmd": "SEND",
@@ -2614,7 +2660,7 @@ class GUI:
                 self.refresh_stats_display()
 
     def on_update_settings(self, sender, app_data):
-        """Save PID settings to JSON and send to ESP32."""
+        """Save PID and tracking-tuning settings to JSON and send to ESP32."""
         t = self.lang_dict[self.current_lang]
         try:
             # Parse inputs cleanly (replacing commas to prevent float errors based on local keyboard layouts)
@@ -2622,15 +2668,31 @@ class GUI:
             ki = float(dpg.get_value(self.input_ki).replace(",", "."))
             kd = float(dpg.get_value(self.input_kd).replace(",", "."))
 
+            output_deadband = float(dpg.get_value(self.input_output_deadband).replace(",", "."))
+            min_tracking_speed = int(float(dpg.get_value(self.input_min_tracking_speed).replace(",", ".")))
+            vision_accel_limit = int(float(dpg.get_value(self.input_vision_accel_limit).replace(",", ".")))
+
+            # GUI-side clamps matching the ESP32 clamps
+            output_deadband = max(0.0, min(10.0, output_deadband))
+            min_tracking_speed = max(0, min(100, min_tracking_speed))
+            vision_accel_limit = max(1, min(100, vision_accel_limit))
+
             # Store to dict and save JSON
             self.config["kp"] = kp
             self.config["ki"] = ki
             self.config["kd"] = kd
+            self.config["output_deadband"] = output_deadband
+            self.config["min_tracking_speed"] = min_tracking_speed
+            self.config["vision_accel_limit"] = vision_accel_limit
             self.save_config()
 
             # Broadcast to ESP32
             if self.is_connected:
                 self.comms_pipe.send({"cmd": "SEND", "value": f"PID,{kp},{ki},{kd}"})
+                self.comms_pipe.send({
+                    "cmd": "SEND",
+                    "value": f"TUNE,{output_deadband},{min_tracking_speed},{vision_accel_limit}"
+                })
 
             # Show success message
             dpg.set_value(self.txt_settings_status, t["txt_update_ok"])
@@ -2659,53 +2721,53 @@ class GUI:
 
             # X-Axis Jogging (LMB row)
             if dpg.does_item_exist("btn_left_lmb") and dpg.is_item_active(
-                "btn_left_lmb"
+                    "btn_left_lmb"
             ):
                 current_key = "j"
             elif dpg.does_item_exist("btn_right_lmb") and dpg.is_item_active(
-                "btn_right_lmb"
+                    "btn_right_lmb"
             ):
                 current_key = "l"
 
             # Y-Axis Jogging (RMB row)
             elif dpg.does_item_exist("btn_left_rmb") and dpg.is_item_active(
-                "btn_left_rmb"
+                    "btn_left_rmb"
             ):
                 current_key = "k"
             elif dpg.does_item_exist("btn_right_rmb") and dpg.is_item_active(
-                "btn_right_rmb"
+                    "btn_right_rmb"
             ):
                 current_key = "i"
 
             # Z-Axis Jogging (Gripper row)
             elif dpg.does_item_exist("btn_left_gripper") and dpg.is_item_active(
-                "btn_left_gripper"
+                    "btn_left_gripper"
             ):
                 current_key = "u"
             elif dpg.does_item_exist("btn_right_gripper") and dpg.is_item_active(
-                "btn_right_gripper"
+                    "btn_right_gripper"
             ):
                 current_key = "o"
 
             # Main action buttons (Relays & Servo)
             elif dpg.does_item_exist("btn_lpm_control") and dpg.is_item_active(
-                "btn_lpm_control"
+                    "btn_lpm_control"
             ):
                 current_key = "1"
             elif dpg.does_item_exist("btn_ppm_control") and dpg.is_item_active(
-                "btn_ppm_control"
+                    "btn_ppm_control"
             ):
                 current_key = "2"
             elif dpg.does_item_exist("btn_gripper_control") and dpg.is_item_active(
-                "btn_gripper_control"
+                    "btn_gripper_control"
             ):
                 current_key = "v"
             elif dpg.does_item_exist("btn_homing_control") and dpg.is_item_active(
-                "btn_homing_control"
+                    "btn_homing_control"
             ):
                 current_key = "h"
             elif dpg.does_item_exist("btn_centering_control") and dpg.is_item_active(
-                "btn_centering_control"
+                    "btn_centering_control"
             ):
                 current_key = "c"
 
@@ -2713,7 +2775,7 @@ class GUI:
                 if current_key != last_sent_key or current_key in ("i", "j", "k", "l"):
                     command = f"0,0,0,{current_key},{self.current_speed},0,7,7"
                     print(f"<GUI_SEND> {command}", flush=True)
-                    
+
                     if self.is_connected:
                         self.comms_pipe.send(
                             {
@@ -2721,23 +2783,23 @@ class GUI:
                                 "value": command,
                             }
                         )
-                    
+
                     last_sent_key = current_key
             else:
                 last_sent_key = ""
-                
+
             for page_tag, elements in self.nav_elements.items():
                 config = self.nav_config.get(page_tag)
                 if dpg.does_item_exist(elements["btn"]) and dpg.does_item_exist(
-                    elements["text"]
+                        elements["text"]
                 ):
                     if page_tag == self.active_page_tag:
                         dpg.configure_item(
-                            elements["btn"], texture_tag=config["active_tex"] #type: ignore
+                            elements["btn"], texture_tag=config["active_tex"]  # type: ignore
                         )
                     else:
                         dpg.configure_item(
-                            elements["btn"], texture_tag=config["inactive_tex"] #type: ignore
+                            elements["btn"], texture_tag=config["inactive_tex"]  # type: ignore
                         )
             dpg.render_dearpygui_frame()
 

@@ -1,5 +1,5 @@
 /*
- * CSAimBot motor control firmware - modified safe workspace version.
+ * CoreXY motor control firmware - predictive tracking workspace version.
  * ESP32-based controller for a CoreXY robotic platform with a Z-axis servo.
  * Limit switches are debounced and used for XY homing and safety.
  * The Z-limit is intentionally ignored in the default workspace logic.
@@ -8,6 +8,22 @@
 
 #include <ESP32Servo.h>
 #include <ESP32Encoder.h>
+
+// ============================================================================
+// Non-blocking debounce state.
+// Keep this near the top of the .ino file. Arduino generates function
+// prototypes automatically, and custom types must already be known.
+// ============================================================================
+
+struct DebouncedInputState {
+  bool stablePressed;
+  bool lastRawPressed;
+  unsigned long lastChangeMs;
+};
+
+DebouncedInputState limitXDebounce = {false, false, 0};
+DebouncedInputState limitYDebounce = {false, false, 0};
+
 
 // ============================================================================
 // Pin definitions.
@@ -82,7 +98,8 @@ float currentPosY = 0.0;
 unsigned long lastEncoderPrint = 0;
 
 float stepsPerCM = 296.30;
-float skewAngleRad = 0.0;
+float skewAngleX = 0.0;
+float skewAngleY = 0.0;
 
 long currentZSteps = 0;
 long stepsForZDrop = 5800;
@@ -181,9 +198,9 @@ float visionTargetY = 0.0;
 float pxToCmX = 0.0021167; // to be calibrated based on eDPI (current 1200)
 float pxToCmY = 0.0021167; // ... = 1px * 2.54 / eDPI
 
-float kpVision = 75.0;
-float kiVision = 6.0;
-float kdVision = 15.0;
+float kpVision = 55.0;
+float kiVision = 0.0;  // Start with PD for moving targets. Add I only for slow static bias.
+float kdVision = 6.0;
 
 float prevVisionErrorX = 0.0;
 float prevVisionErrorY = 0.0;
@@ -196,12 +213,35 @@ unsigned long lastVisionPidMicros = 0;
 
 float filteredOffsetX = 0.0;
 float filteredOffsetY = 0.0;
-const float VISION_FILTER_ALPHA = 0.65;
+const float VISION_FILTER_ALPHA = 0.70; // higher = less lag; lower = smoother
 
 int visionDeadzonePxX = 5;
 int visionDeadzonePxY = 5;
 
 const float VISION_TARGET_TOLERANCE_CM = 0.01;
+
+// Predictive tracking and speed-shaping settings.
+// lookahead compensates camera/inference/serial/mechanical latency.
+float visionLookaheadSec = 0.000;       // stable default: no prediction; tune up slowly
+float kvVisionPx = 0.00;                // stable default: no velocity feed-forward; tune up slowly
+float filteredTargetVelPxX = 0.0;
+float filteredTargetVelPxY = 0.0;
+const float TARGET_VEL_FILTER_ALPHA = 0.35;
+float prevRotatedOffsetX = 0.0;
+float prevRotatedOffsetY = 0.0;
+bool hasPrevRotatedOffset = false;
+
+const float MAX_DERIVATIVE_CM_S = 5.0;  // derivative clamp in cm/s
+
+// Runtime-tunable tracking parameters. These can be changed from the PC GUI
+// with: TUNE,<outputDeadband>,<minTrackingSpeedPercent>,<visionAccelLimitPercent>
+float outputDeadband = 0.9;             // larger deadband improves stability
+int minTrackingSpeedPercent = 3;        // minimum speed while tracking
+int visionAccelLimitPercent = 10;       // max speed-percent change per control update
+int currentVisionSpeedPercent = 0;
+
+unsigned long centeredSinceMs = 0;
+const unsigned long CENTER_STABLE_STOP_MS = 80;
 
 
 // ============================================================================
@@ -759,6 +799,29 @@ void blockMoveIfWouldExceedLimit(bool &moveUp, bool &moveDown, bool &moveLeft, b
   }
 }
 
+
+// ============================================================================
+// Non-blocking debounce read function.
+// State struct and variables are declared near the top of the file to avoid
+// Arduino auto-prototype issues with custom types.
+// ============================================================================
+
+bool readDebouncedPressed(int pin, DebouncedInputState &state, unsigned long debounceTimeMs) {
+  bool rawPressed = (digitalRead(pin) == LOW);
+  unsigned long nowMs = millis();
+
+  if (rawPressed != state.lastRawPressed) {
+    state.lastRawPressed = rawPressed;
+    state.lastChangeMs = nowMs;
+  }
+
+  if (nowMs - state.lastChangeMs >= debounceTimeMs) {
+    state.stablePressed = rawPressed;
+  }
+
+  return state.stablePressed;
+}
+
 // ============================================================================
 // Emergency stop helper.
 // ============================================================================
@@ -1102,48 +1165,99 @@ void setDelayFromSpeedPercent(int speedPercent) {
   delayCoreXY = (int)(1000000.0 / (100.0 + ((speedPercent - 1.0) / 99.0) * 9900.0));
 }
 
-void applyVisionPControl() {
+void applyVisionTrackingControl() {
   updateEncoderPosition();
 
-  bool isVisionCenteredNow =
-  abs(targetOffsetPxX) <= visionDeadzonePxX  &&
-  abs(targetOffsetPxY) <= visionDeadzonePxY;
-
-  if (isVisionCenteredNow) {
+  // No detected target: stop motion and reset only the tracking state that would
+  // otherwise create stale prediction when the target appears again.
+  if (targetDetected != 1) {
     stopAllMotors();
-    prevVisionErrorX = 0.0;
-    prevVisionErrorY = 0.0;
-    integralErrorX = 0.0;
-    integralErrorY = 0.0;
+    isManualJogging = false;
+    currentVisionSpeedPercent = 0;
     lastVisionPidMicros = 0;
-    filteredOffsetX = 0.0;
-    filteredOffsetY = 0.0;
-
-    unsigned long nowMs = millis();
-
-    if (!wasVisionCentered &&
-        nowMs - lastVisionCenteredEventMs >= VISION_CENTERED_COOLDOWN_MS) {
-      Serial.println("VISION CENTERED EVENT");
-      lastVisionCenteredEventMs = nowMs;
-    }
-    wasVisionCentered = true;
+    hasPrevRotatedOffset = false;
+    centeredSinceMs = 0;
     return;
+  }
+
+  unsigned long nowMicros = micros();
+  unsigned long nowMs = millis();
+  float dt = 0.001;
+
+  if (lastVisionPidMicros > 0) {
+    dt = (nowMicros - lastVisionPidMicros) / 1000000.0;
+    if (dt <= 0.0001) dt = 0.0001;
+    if (dt > 0.1000) dt = 0.1000; // avoid a huge derivative after a pause
+  }
+
+  // Filter pixel offset. This should be light; heavy filtering adds latency.
+  filteredOffsetX = filteredOffsetX + VISION_FILTER_ALPHA * ((float)targetOffsetPxX - filteredOffsetX);
+  filteredOffsetY = filteredOffsetY + VISION_FILTER_ALPHA * ((float)targetOffsetPxY - filteredOffsetY);
+
+  // Skew angles are already inverted in Python to counter the coordinate system mismatch
+  float rotatedOffsetX = (filteredOffsetX * cos(skewAngleX)) - (filteredOffsetY * sin(skewAngleY));
+  float rotatedOffsetY = (filteredOffsetX * sin(skewAngleX)) + (filteredOffsetY * cos(skewAngleY));
+
+  // Estimate target motion in screen pixels/s and filter that velocity.
+  float rawTargetVelPxX = 0.0;
+  float rawTargetVelPxY = 0.0;
+
+  if (hasPrevRotatedOffset) {
+    rawTargetVelPxX = (rotatedOffsetX - prevRotatedOffsetX) / dt;
+    rawTargetVelPxY = (rotatedOffsetY - prevRotatedOffsetY) / dt;
+  } else {
+    hasPrevRotatedOffset = true;
+  }
+
+  prevRotatedOffsetX = rotatedOffsetX;
+  prevRotatedOffsetY = rotatedOffsetY;
+
+  filteredTargetVelPxX = filteredTargetVelPxX + TARGET_VEL_FILTER_ALPHA * (rawTargetVelPxX - filteredTargetVelPxX);
+  filteredTargetVelPxY = filteredTargetVelPxY + TARGET_VEL_FILTER_ALPHA * (rawTargetVelPxY - filteredTargetVelPxY);
+
+  bool isVisionCenteredNow =
+    abs(targetOffsetPxX) <= visionDeadzonePxX &&
+    abs(targetOffsetPxY) <= visionDeadzonePxY;
+
+  bool targetMoving =
+    abs(filteredTargetVelPxX) > 25.0 ||
+    abs(filteredTargetVelPxY) > 25.0;
+
+  // For moving targets, do not immediately stop and reset inside the deadzone.
+  // Stop only when it has stayed centered and almost static for a short time.
+  if (isVisionCenteredNow && !targetMoving) {
+    if (centeredSinceMs == 0) centeredSinceMs = nowMs;
+
+    if (nowMs - centeredSinceMs >= CENTER_STABLE_STOP_MS) {
+      stopAllMotors();
+      isManualJogging = false;
+      currentVisionSpeedPercent = 0;
+      prevVisionErrorX = 0.0;
+      prevVisionErrorY = 0.0;
+      integralErrorX = 0.0;
+      integralErrorY = 0.0;
+
+      if (!wasVisionCentered &&
+          nowMs - lastVisionCenteredEventMs >= VISION_CENTERED_COOLDOWN_MS) {
+        Serial.println("VISION CENTERED EVENT");
+        lastVisionCenteredEventMs = nowMs;
+      }
+      wasVisionCentered = true;
+      lastVisionPidMicros = nowMicros;
+      return;
+    }
+  } else {
+    centeredSinceMs = 0;
   }
 
   wasVisionCentered = false;
 
-  // Convert the current pixel offset into a robot target position.
+  // Predict where the detected point will be after measured system latency.
+  float predictedOffsetX = rotatedOffsetX + (filteredTargetVelPxX * visionLookaheadSec);
+  float predictedOffsetY = rotatedOffsetY + (filteredTargetVelPxY * visionLookaheadSec);
 
-  filteredOffsetX = filteredOffsetX + VISION_FILTER_ALPHA * ((float)targetOffsetPxX - filteredOffsetX);
-  filteredOffsetY = filteredOffsetY + VISION_FILTER_ALPHA * ((float)targetOffsetPxY - filteredOffsetY);
-
-  float compAngle = -skewAngleRad;
-
-  float rotatedOffsetX = (filteredOffsetX * cos(compAngle)) - (filteredOffsetY * sin(compAngle));
-  float rotatedOffsetY = (filteredOffsetX * sin(compAngle)) + (filteredOffsetY * cos(compAngle));
-
-  visionTargetX = currentPosX - (rotatedOffsetX * pxToCmX);
-  visionTargetY = currentPosY - (rotatedOffsetY * pxToCmY);
+  visionTargetX = currentPosX - (predictedOffsetX * pxToCmX);
+  visionTargetY = currentPosY - (predictedOffsetY * pxToCmY);
 
   if (visionTargetX < LIMIT_MIN_X + LIMIT_MARGIN_CM) visionTargetX = LIMIT_MIN_X + LIMIT_MARGIN_CM;
   if (visionTargetX > LIMIT_MAX_X - LIMIT_MARGIN_CM) visionTargetX = LIMIT_MAX_X - LIMIT_MARGIN_CM;
@@ -1154,33 +1268,18 @@ void applyVisionPControl() {
   float errorX = visionTargetX - currentPosX;
   float errorY = visionTargetY - currentPosY;
 
-  if (abs(errorX) <= VISION_TARGET_TOLERANCE_CM &&
-      abs(errorY) <= VISION_TARGET_TOLERANCE_CM) {
-    stopAllMotors();
-    return;
-  }
-
-  // Compute the PD output.
-
-  unsigned long nowMicros = micros();
-  float dt = 0.001;
-
-  if (lastVisionPidMicros > 0) {
-    dt = (nowMicros - lastVisionPidMicros) / 1000000.0;
-    if (dt <= 0.0001) dt = 0.0001;
-  }
-
+  // Derivative of position error in cm/s.
   float derivativeX = (errorX - prevVisionErrorX) / dt;
   float derivativeY = (errorY - prevVisionErrorY) / dt;
 
-  const float MAX_DERIVATIVE = 2.0;
+  if (derivativeX > MAX_DERIVATIVE_CM_S) derivativeX = MAX_DERIVATIVE_CM_S;
+  if (derivativeX < -MAX_DERIVATIVE_CM_S) derivativeX = -MAX_DERIVATIVE_CM_S;
 
-  if (derivativeX > MAX_DERIVATIVE) derivativeX = MAX_DERIVATIVE;
-  if (derivativeX < -MAX_DERIVATIVE) derivativeX = -MAX_DERIVATIVE;
+  if (derivativeY > MAX_DERIVATIVE_CM_S) derivativeY = MAX_DERIVATIVE_CM_S;
+  if (derivativeY < -MAX_DERIVATIVE_CM_S) derivativeY = -MAX_DERIVATIVE_CM_S;
 
-  if (derivativeY > MAX_DERIVATIVE) derivativeY = MAX_DERIVATIVE;
-  if (derivativeY < -MAX_DERIVATIVE) derivativeY = -MAX_DERIVATIVE;
-
+  // Integrator is optional; keep Ki at 0 for fast moving targets unless you need
+  // to remove slow static bias. Clamp remains here for safe tuning.
   integralErrorX += errorX * dt;
   integralErrorY += errorY * dt;
 
@@ -1190,17 +1289,19 @@ void applyVisionPControl() {
   if (integralErrorY > maxIntegral) integralErrorY = maxIntegral;
   if (integralErrorY < -maxIntegral) integralErrorY = -maxIntegral;
 
-  float outputX = (kpVision * errorX) + (kiVision * integralErrorX) + (kdVision * derivativeX);
-  float outputY = (kpVision * errorY) + (kiVision * integralErrorY) + (kdVision * derivativeY);
+  // Feed-forward from measured target velocity. This is what keeps the robot from
+  // slowing too much while it is following a moving point.
+  float feedForwardX = -filteredTargetVelPxX * pxToCmX * kvVisionPx;
+  float feedForwardY = -filteredTargetVelPxY * pxToCmY * kvVisionPx;
+
+  float outputX = (kpVision * errorX) + (kiVision * integralErrorX) + (kdVision * derivativeX) + feedForwardX;
+  float outputY = (kpVision * errorY) + (kiVision * integralErrorY) + (kdVision * derivativeY) + feedForwardY;
 
   prevVisionErrorX = errorX;
   prevVisionErrorY = errorY;
   lastVisionPidMicros = nowMicros;
 
-  // Map the output to movement direction.
-  float outputDeadband = 1.0;
-
-  // Set direction flags for endstop safety checks.
+  // Map output to movement direction.
   bool mLeft = outputX > outputDeadband;
   bool mRight = outputX < -outputDeadband;
   bool mDown = outputY > outputDeadband;
@@ -1215,22 +1316,22 @@ void applyVisionPControl() {
       (!mRight && outputX < -outputDeadband)) {
 
       isManualJogging = false;
+      currentVisionSpeedPercent = 0;
       stopAllMotors();
       return;
   }
 
-  // Apply CoreXY kinematic transformation directly from PID output.
+  // CoreXY kinematic transformation.
   float vM1 = -outputX - outputY;
   float vM2 = -outputX + outputY;
 
-  // Normalize vector speed.
+  // Direction vector normalization. PID magnitude is still used for speed below.
   float maxV = max(abs(vM1), abs(vM2));
   if (maxV > 0.0) {
       vM1 /= maxV;
       vM2 /= maxV;
   }
 
-  // Send step data to the loop accumulator for proportional movement.
   jogVM1 = abs(vM1);
   jogVM2 = abs(vM2);
   jogDirM1 = (vM1 >= 0) ? HIGH : LOW;
@@ -1241,22 +1342,37 @@ void applyVisionPControl() {
   isMovingDown  = mDown;
   isMovingUp    = mUp;
 
-  // Map the output magnitude to speed.
   float magnitude = sqrt((outputX * outputX) + (outputY * outputY));
-  int pidSpeed = (int)magnitude;
+  int targetSpeedPercent = (int)magnitude;
 
-  if (pidSpeed > maxSpeedValue) pidSpeed = maxSpeedValue;
-  if (pidSpeed < 10) pidSpeed = 10;
+  if (targetSpeedPercent > maxSpeedValue) targetSpeedPercent = maxSpeedValue;
 
-  if (maxSpeedValue <= 0 || pidSpeed <= 0) {
+  if (mUp || mDown || mLeft || mRight) {
+    if (targetSpeedPercent < minTrackingSpeedPercent) {
+      targetSpeedPercent = minTrackingSpeedPercent;
+    }
+  } else {
+    targetSpeedPercent = 0;
+  }
+
+  if (maxSpeedValue <= 0 || targetSpeedPercent <= 0) {
     isManualJogging = false;
+    currentVisionSpeedPercent = 0;
     stopAllMotors();
     return;
   }
 
-  // Enable the step accumulator system in the main loop to execute the movement.
+  // Acceleration limiting: avoid abrupt frequency jumps and lost steps.
+  if (targetSpeedPercent > currentVisionSpeedPercent + visionAccelLimitPercent) {
+    currentVisionSpeedPercent += visionAccelLimitPercent;
+  } else if (targetSpeedPercent < currentVisionSpeedPercent - visionAccelLimitPercent) {
+    currentVisionSpeedPercent -= visionAccelLimitPercent;
+  } else {
+    currentVisionSpeedPercent = targetSpeedPercent;
+  }
+
   isManualJogging = true;
-  setDelayFromSpeedPercent(pidSpeed);
+  setDelayFromSpeedPercent(currentVisionSpeedPercent);
 }
 
 
@@ -1419,8 +1535,8 @@ void loop() {
 
   // Limit switch safety and bounce-back.
 
-  bool limitX = isSwitchStablyPressed(LIMIT_X_PIN, 90);
-  bool limitY = isSwitchStablyPressed(LIMIT_Y_PIN, 90);
+  bool limitX = readDebouncedPressed(LIMIT_X_PIN, limitXDebounce, 20);
+  bool limitY = readDebouncedPressed(LIMIT_Y_PIN, limitYDebounce, 20);
   bool limitZ = false;
 
   if (limitX || limitY || limitZ) {
@@ -1518,21 +1634,25 @@ void loop() {
       isCommandReady = false;
       bufferIndex = 0;
     }
-    else if (data.substring(0, 11) == "CALIBRATION") {
-      int firstComma = data.indexOf(',', 11);
+    else if (data.substring(0, 12) == "CALIBRATION,") {
+      int firstComma = data.indexOf(',', 0);
       int secondComma = data.indexOf(',', firstComma + 1);
+      int thirdComma = data.indexOf(',', secondComma + 1);
 
-      if (firstComma > 0 && secondComma > 0) {
+      if (firstComma > 0 && secondComma > 0 && thirdComma > 0) {
         int calibrated_edpi = data.substring(firstComma + 1, secondComma).toInt();
-        skewAngleRad = data.substring(secondComma + 1).toFloat();
+        skewAngleX = data.substring(secondComma + 1, thirdComma).toFloat();
+        skewAngleY = data.substring(thirdComma + 1).toFloat();
 
         pxToCmX = 1.0 * 2.54 / calibrated_edpi;
         pxToCmY = 1.0 * 2.54 / calibrated_edpi;
 
         Serial.print("Calibration saved! eDPI: ");
         Serial.print(calibrated_edpi);
-        Serial.print(" | Skew Angle (rad): ");
-        Serial.println(skewAngleRad, 4);
+        Serial.print(" | SkewX: ");
+        Serial.print(skewAngleX, 4);
+        Serial.print(" | SkewY: ");
+        Serial.println(skewAngleY, 4);
       }
     }
     else if (data.substring(0, 4) == "PID,") {
@@ -1551,6 +1671,53 @@ void loop() {
         Serial.print(kiVision);
         Serial.print(" Kd=");
         Serial.println(kdVision);
+      }
+    }
+    else if (data.substring(0, 6) == "TRACK,") {
+      int firstComma = data.indexOf(',', 0);
+      int secondComma = data.indexOf(',', firstComma + 1);
+
+      if (firstComma > 0 && secondComma > 0) {
+        visionLookaheadSec = data.substring(firstComma + 1, secondComma).toFloat();
+        kvVisionPx = data.substring(secondComma + 1).toFloat();
+
+        if (visionLookaheadSec < 0.0) visionLookaheadSec = 0.0;
+        if (visionLookaheadSec > 0.150) visionLookaheadSec = 0.150;
+        if (kvVisionPx < 0.0) kvVisionPx = 0.0;
+        if (kvVisionPx > 3.0) kvVisionPx = 3.0;
+
+        Serial.print("Tracking updated: lookaheadSec=");
+        Serial.print(visionLookaheadSec, 4);
+        Serial.print(" KvPx=");
+        Serial.println(kvVisionPx, 4);
+      }
+    }
+    else if (data.substring(0, 5) == "TUNE,") {
+      int firstComma = data.indexOf(',', 0);
+      int secondComma = data.indexOf(',', firstComma + 1);
+      int thirdComma = data.indexOf(',', secondComma + 1);
+
+      if (firstComma > 0 && secondComma > 0 && thirdComma > 0) {
+        outputDeadband = data.substring(firstComma + 1, secondComma).toFloat();
+        minTrackingSpeedPercent = data.substring(secondComma + 1, thirdComma).toInt();
+        visionAccelLimitPercent = data.substring(thirdComma + 1).toInt();
+
+        // Safety clamps for stable runtime tuning.
+        if (outputDeadband < 0.0) outputDeadband = 0.0;
+        if (outputDeadband > 10.0) outputDeadband = 10.0;
+
+        if (minTrackingSpeedPercent < 0) minTrackingSpeedPercent = 0;
+        if (minTrackingSpeedPercent > 100) minTrackingSpeedPercent = 100;
+
+        if (visionAccelLimitPercent < 1) visionAccelLimitPercent = 1;
+        if (visionAccelLimitPercent > 100) visionAccelLimitPercent = 100;
+
+        Serial.print("Tune updated: deadband=");
+        Serial.print(outputDeadband, 3);
+        Serial.print(" minSpeed=");
+        Serial.print(minTrackingSpeedPercent);
+        Serial.print(" accelLimit=");
+        Serial.println(visionAccelLimitPercent);
       }
     }
     else if (data.length() > 0) {
@@ -1619,7 +1786,7 @@ void loop() {
           if (!rawUp && !rawDown && !rawLeft && !rawRight) {
             visionControlActive = true;
             isManualJogging = false;
-            applyVisionPControl();
+            applyVisionTrackingControl();
 
           } else {
             visionControlActive = false;
@@ -1634,10 +1801,9 @@ void loop() {
             if (rawUp) manY = -1.0;
             if (rawDown) manY = 1.0;
 
-            // 2. Rotate vector by the calibrated mouse skew angle
-            float compAngle = -skewAngleRad;
-            float rotX = (manX * cos(compAngle)) - (manY * sin(compAngle));
-            float rotY = (manX * sin(compAngle)) + (manY * cos(compAngle));
+            // 2. Rotate vector by the calibrated separate axis skew angles
+            float rotX = (manX * cos(skewAngleX)) - (manY * sin(skewAngleY));
+            float rotY = (manX * sin(skewAngleX)) + (manY * cos(skewAngleY));
 
             // 3. CoreXY kinematic transformation
             float vM1 = rotX - rotY;
