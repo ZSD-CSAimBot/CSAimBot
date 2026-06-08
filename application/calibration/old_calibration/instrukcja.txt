@@ -1,3 +1,35 @@
+Calibration system - setup and plugin information
+
+-----IMPORTANT-------
+RUN CS:GO WITH THE -insecure PARAMETER
+YOU WILL NOT BE ABLE TO RUN ANY OTHER VERSION WHILE HAVING THE ADDONS FOLDER IN THE GAME FILES; MOVE IT IF YOU WANT TO PLAY ON YOUR OWN
+
+
+Links:
+1: sourcemod.net/downloads.php
+2: metamodsource.net/downloads.php
+3: https://forums.alliedmods.net/showthread.php?t=67640 <--- The include.inc file was modified; the working version is located in the folder.
+
+
+All the necessary tools for the plugin are already located in the calibration folder. However, if something breaks, the files required for the setup can be found at the links provided above.
+
+
+QUICK INSTRUCTIONS:
+
+1. Download all files from the links.
+2. Merge the addons folders from sourcemod and metamodsource into one folder and add it to the main CS:GO directory.
+3. Take the socket.inc file from socket_3.0.1\addons\sourcemod\scripting and move it to csgo/addons/sourcemod/scripting/include/ 
+4. Take the socket.ext.dll from socket_3.0.1\addons\sourcemod\extensions and move it to csgo/addons/sourcemod/extensions/
+5. Our compiler is the file csgo/addons/sourcemod/scripting/spcomp.exe. In the scripting folder, create/copy the wysylacz.sp file and then compile it using spcomp.exe (drag wysylacz.sp onto spcomp.exe or use "spcomp.exe wysylacz.sp" in the command prompt).
+6. After compilation, the wysylacz.smx file will be generated; move it to the csgo\addons\sourcemod\plugins folder.
+7. Run the map_echo.py Python script in the background.
+
+If everything is configured correctly, the bullet impact coordinates should appear in the map_echo.py script; this will be needed for calibration in the future.
+
+
+
+
+
 system kalibracji- setup i informacje o pluginie
 
 -----WAŻNE-------
