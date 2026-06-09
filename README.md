@@ -2,69 +2,69 @@
 
 ---
 
-## Krótki opis projektu
-Celem projektu jest stworzenie fizycznego AimBota do gry CSGO. Program czytałby ekran z grą, oznaczałby przeciwników oraz zwracał wartość, o którą musiałaby poruszyć się mysz. Do ruchu myszką stworzony zostanie robot typu kartezjańskiego z odpowiednim uchwytem. Robot byłby w stanie zaadaptować się do różnych myszek i wartości DPI. Robot będzie w stanie strzelać i kompensować odrzut broni zapewniając większą dokładność. Klawiszami WASD kierowałby gracz, więc robot musiałby z nim współpracować.
+## Brief Project Description
+The goal of the project is to create a physical AimBot for the game CS:GO. The program would read the game screen, mark enemies, and return the value by which the mouse must move. To execute the mouse movement, a Cartesian robot with an appropriate grip will be created. The robot would be able to adapt to different mice and DPI values. The robot will be capable of shooting and compensating for weapon recoil, ensuring greater accuracy. The player would control the movement using the WASD keys, so the robot must cooperate with them.
 
 ---
 
-## Zakres funkcjonalny
-* Czytanie ekranu i oznaczanie przeciwników.
-* Obliczanie drogi robota.
-* Ruch myszką za pomocą robota kartezjańskiego oraz strzał za pomocą przycisku.
-* Rozglądanie się w przypadku braku wykrycia przeciwników.
-* Współpraca z graczem.
+## Functional Scope
+* Reading the screen and marking enemies.
+* Calculating the robot's trajectory.
+* Moving the mouse using the Cartesian robot and shooting via a button.
+* Looking around if no enemies are detected.
+* Cooperating with the player.
 
 ---
 
-## Budowa systemu
-* **Robot ruszający myszką:** Robot typu kartezjańskiego z silnikami krokowymi i enkoderami lub serwomechanizmami dla osi XY i śrubą kulową/trapezową dla osi Z wraz z odpowiednim uchwytem zdolnym do trzymania wielu rodzajów myszek. Robot korygowałby sterowanie w przypadku braku osiągnięcia celownika na przeciwniku oraz kompensował odrzut broni.
-* **System przechwytujący ekran:** Przechwytywanie ekranu odbywać się będzie za pomocą odpowiednich bibliotek w Pythonie/C++ oraz przekazywania przechwyconych klatek do algorytmu wykrywającego przeciwników.
-* **System wykrywający przeciwników:** System bazujący na YOLO będzie wykrywał i oznaczał przeciwników na obrazie i zwracał wartości pozwalające na sterowanie silnikami w robocie w celu namierzenia i eliminacji przeciwnika.
+## System Architecture
+* **Robot moving the mouse:** A Cartesian robot featuring stepper motors and encoders or servomechanisms for the XY axes, and a ball/trapezoidal lead screw for the Z axis, equipped with a proper grip capable of holding multiple types of mice. The robot would correct the steering if the crosshair fails to land on the enemy and would compensate for weapon recoil.
+* **Screen capture system:** Screen capture will be handled using appropriate Python/C++ libraries, forwarding the captured frames to the enemy detection algorithm.
+* **Enemy detection system:** A YOLO-based system will detect and mark enemies on the image, returning values that allow controlling the robot's motors in order to aim at and eliminate the target.
 
 ---
 
-## Stack technologiczny
+## Technology Stack
 
-**Sprzęt - robot:**
-* Mikrokontroler esp32, sterowniki silników.
-* Silniki krokowe NEMA 23, śruba kulowa/trapezowa.
-* Zasilacz, przetwornice step-down.
-* Wydrukowane ramię robota i chwytak, serwo do obsługi chwytaka.
+**Hardware - robot:**
+* ESP32 microcontroller, motor drivers.
+* NEMA 23 stepper motors, ball/trapezoidal lead screw.
+* Power supply, step-down converters.
+* 3D printed robot arm and gripper, servo to operate the gripper.
 
-**Sprzęt - komputer:**
-* Komputer z kartą graficzną, monitor, myszka, klawiatura.
+**Hardware - PC:**
+* PC with a graphics card, monitor, mouse, keyboard.
 
-**Oprogramowanie:**
-* Język Python/ C/C++ i odpowiednie biblioteki, YOLO.
+**Software:**
+* Python/C/C++ languages and relevant libraries, YOLO.
 * PyCharm, Arduino IDE, VSC.
-* Komunikacja szeregowa np. UART, TCP/IP, USB.
-* Algorytmy kinematyki odwrotnej.
+* Serial communication (e.g., UART, TCP/IP, USB).
+* Inverse kinematics algorithms.
 
 ---
 
-## Główne założenia
+## Main Assumptions
 
-### Założenia sprzętowe (Hardware)
-* Projekt będzie działać w temperaturze pokojowej w zamkniętym pomieszczeniu na poziomej płaskiej powierzchni umożliwiającej poprawne zamontowanie robota (np. biurko) i umożliwiającej poprawne użycie klawiatury.
-* Mysz będzie się poruszać na materiałowej podkładce do myszy.
-* Mysz musi korzystać z laserowego lub optycznego sensora i posiadać przynajmniej 2 przyciski (lewy i prawy), reszta przycisków będzie ignorowana. 
-* Przy zmianie myszki/wartości DPI na inną wykonywana będzie półautomatyczna procedura kalibracji. Robot będzie sprawdzał o ile musi się poruszyć, żeby przejść między punktami referencyjnymi na specjalnej mapie.
-* Komunikacja PC-Mikrokontroler poprzez UART (USB) z prędkością 115200 baud.
+### Hardware Assumptions
+* The project will operate at room temperature in an enclosed room on a horizontal, flat surface that allows for the proper mounting of the robot (e.g., a desk) and the proper use of the keyboard.
+* The mouse will move on a cloth mousepad.
+* The mouse must use a laser or optical sensor and have at least 2 buttons (left and right); the remaining buttons will be ignored. 
+* When changing the mouse or DPI values, a semi-automatic calibration procedure will be executed. The robot will check the distance it needs to move to transition between reference points on a dedicated map.
+* PC-to-Microcontroller communication will be handled via UART (USB) at a baud rate of 115200.
 
-### Założenia programowe (Software)
-* Program komputerowy będzie działać na systemie Windows 11 Pro build >=25H2 lub równoważnym. Program nie będzie działać na Linuxie ani na MacOS.
-* Wymagany komputer PC o odpowiedniej mocy obliczeniowej (karta graficzna wspierająca CUDA, min. RTX 3060) z monitorem, nie na laptopie.
-* Program będzie wykrywać modele przeciwników w grze (będzie odróżniał modele CT od T).
-* Program będzie wykrywał czy użytkownik trzyma pistolet czy karabin za pomocą klasycznej wizji maszynowej (template matching z openCV). Jeśli gracz trzyma pistolet lub karabin snajperski, to kompensacja odrzutu będzie wyłączona. W przeciwnym wypadku program będzie korygował odrzut konkretnych broni (AK47/M4A1).
+### Software Assumptions
+* The computer program will run on Windows 11 Pro build >=25H2 or equivalent. The program will not work on Linux or macOS.
+* A PC with adequate computing power is required (a graphics card supporting CUDA, min. RTX 3060) along with a monitor; laptops are not supported.
+* The program will detect enemy models in the game (it will distinguish CT models from T models).
+* The program will detect whether the user is holding a pistol or a rifle using classic computer vision (template matching with OpenCV). If the player is holding a pistol or a sniper rifle, recoil compensation will be disabled. Otherwise, the program will correct the recoil for specific weapons (AK47/M4A1).
 
-### Założenia gry
-* Program będzie działał tylko podczas rozpoczętej rundy, na dowolnej mapie.
-* Gra musi być ustawiona na minimum 60 FPS. Wymagane włączenie opcji natychmiastowego usuwania ciał po zabójstwie w grze lokalnej.
-* Czas reakcji przy eDPI dobranym tak, aby robot nie musiał podnosić myszy będzie wynosił maksymalnie tyle ile czas reakcji dobrego gracza (<200ms).
+### Game Assumptions
+* The program will only run during an active round, on any map.
+* The game must run at a minimum of 60 FPS. Enabling the option for instant corpse removal after a kill in a local game is required.
+* The reaction time, with the eDPI adjusted so that the robot does not need to lift the mouse, will be at most equal to the reaction time of a skilled player (<200ms).
 
 ---
 
-## Zespół projektowy
+## Project Team
 * Tomasz Nazar
 * Filip Pietrzak
 * Patryk Polechoński
