@@ -18,7 +18,7 @@
 
 - Esp32
 - 2x silniki NEMA 23
-- 2x sterowniki silników krokowych DM556
+- 3x sterowniki silników krokowych DM556
 - Prowadnice
 - Szyny
 - Śruba kulowa/trapezowa
