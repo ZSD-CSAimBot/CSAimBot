@@ -12,9 +12,10 @@ import serial.tools.list_ports
 # X is the end stop near the motor.
 # Y is the carriage axis with the gripper.
 from utils.json_utils import StatsManager
-#from calibration.map_echo import CSGOTelemetry
+# from calibration.map_echo import CSGOTelemetry
 from calibration.calibration import CalibrationRoutine
 from utils.traj_log import TrajectoryLogger
+
 
 class GUI:
     """Main Dear PyGui application wrapper."""
@@ -38,6 +39,8 @@ class GUI:
         self.sidebar_expanded = False
         self.stats_manager = StatsManager()
         self._last_stats_refresh = 0
+
+        self.load_config()
 
         self.telemetry_enabled = False
         self.is_recording_trajectory = False
@@ -153,14 +156,17 @@ class GUI:
                 "stat_dist_title": "Distance Traveled",
                 "stat_dist_desc": "Total distance traveled by a mouse",
                 "stat_energy_title": "Energy wasted",
-                "stat_energy_desc": "Aproximated amount of energy used by the bot",
-                "stat_unknown_title": "???",
-                "stat_unknown_desc": "???",
+                "stat_energy_desc": "Approximated amount of energy used by the bot",
+                "stat_forcestop_title": "Times force stopped",
+                "stat_forcestop_desc": "Amount of times force stop has been activated",
                 "stat_keys_title": "Keys pressed",
-                "stat_keys_desc": "Amount of key presses by a user",
+                "stat_keys_desc": "Amount of key presses inputted by a user",
                 "refresh": "Refresh",
                 "axis_time": "Time",
                 "axis_dist": "Distance",
+                "txt_update_btn": "Update Settings",
+                "txt_update_ok": "Settings updated successfully",
+                "txt_update_err": "Error: Invalid values!",
             },
             "Polski": {
                 "nav_home": "Strona Główna",
@@ -203,13 +209,16 @@ class GUI:
                 "stat_dist_desc": "Całkowity dystans przebyty przez mysz",
                 "stat_energy_title": "Zużyta energia",
                 "stat_energy_desc": "Przybliżona ilość energii zużytej przez bota",
-                "stat_unknown_title": "???",
-                "stat_unknown_desc": "???",
+                "stat_forcestop_title": "Wymuszone zatrzymania",
+                "stat_forcestop_desc": "Ilość wymuszonych zatrzymań bota",
                 "stat_keys_title": "Wciśnięte klawisze",
                 "stat_keys_desc": "Ilość klawiszy wciśniętych przez użytkownika",
                 "refresh": "Odśwież",
                 "axis_time": "Czas",
                 "axis_dist": "Dystans",
+                "txt_update_btn": "Aktualizuj Ustawienia",
+                "txt_update_ok": "Ustawienia pomyślnie zaktualizowane",
+                "txt_update_err": "Błąd: Nieprawidłowe wartości!",
             },
         }
         dpg.create_context()
@@ -244,6 +253,34 @@ class GUI:
         # Initialize and display available COM ports correctly
         self.refresh_ports()
 
+    def load_config(self):
+        """Load PID settings from a local JSON file."""
+        import json
+        base = os.path.dirname(os.path.abspath(__file__))
+        self.config_path = os.path.abspath(os.path.join(base, "..", "data", "config.json"))
+        os.makedirs(os.path.dirname(self.config_path), exist_ok=True)
+
+        # Default fallback values mirroring your screenshot
+        self.config = {"kp": 75.0, "ki": 6.0, "kd": 15.0, "output_deadband": 0.9, "min_tracking_speed": 3,
+                       "vision_accel_limit": 10}
+
+        if os.path.exists(self.config_path):
+            try:
+                with open(self.config_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    self.config.update(data)
+            except Exception:
+                pass
+
+    def save_config(self):
+        """Save PID settings to a local JSON file."""
+        import json
+        try:
+            with open(self.config_path, "w", encoding="utf-8") as f:
+                json.dump(self.config, f, indent=4)
+        except Exception as e:
+            print(f"Failed to save config: {e}")
+
     def rs(self, w=None, h=None, pos=None, wrap=None, tag=None):
         """Register base UI constraints for high-quality scaling logic."""
         if tag is None:
@@ -272,10 +309,10 @@ class GUI:
 
             # Switch to the appropriate font, avoiding ugly blur
             if (
-                hasattr(self, "font_720")
-                and self.font_720
-                and hasattr(self, "font_1080")
-                and self.font_1080
+                    hasattr(self, "font_720")
+                    and self.font_720
+                    and hasattr(self, "font_1080")
+                    and self.font_1080
             ):
                 dpg.bind_font(
                     self.font_1080 if self.current_scale > 1.1 else self.font_720
@@ -490,12 +527,20 @@ class GUI:
                 dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 5)
                 dpg.add_theme_style(dpg.mvStyleVar_ButtonTextAlign, 0.5, 0.5)
 
+        with dpg.theme() as self.gold_input_theme:
+            with dpg.theme_component(dpg.mvInputText):
+                dpg.add_theme_color(dpg.mvThemeCol_FrameBg, [255, 190, 25, 255])
+                dpg.add_theme_color(dpg.mvThemeCol_FrameBgHovered, [255, 200, 0, 255])
+                dpg.add_theme_color(dpg.mvThemeCol_FrameBgActive, [255, 200, 0, 255])
+                dpg.add_theme_color(dpg.mvThemeCol_Text, [0, 0, 0, 255])
+                dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 8)
+
         self.invisible_btn_theme = self.create_btn_theme(
             [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]
         )
 
     def create_btn_theme(
-        self, color, hover_color, active_color, text_color=[255, 255, 255]
+            self, color, hover_color, active_color, text_color=[255, 255, 255]
     ):
         """Create a button theme.
 
@@ -590,6 +635,7 @@ class GUI:
             load_and_add("icons/stats/ikona_mouse.png", "tex_stat_mouse")
             load_and_add("icons/stats/ikona_dist.png", "tex_stat_dist")
             load_and_add("icons/stats/ikona_energy.png", "tex_stat_energy")
+            load_and_add("icons/stats/ikona_stop.png", "tex_stat_stop")
             load_and_add("icons/stats/ikona_keys.png", "tex_stat_keys")
 
     def toggle_sidebar(self, sender, app_data):
@@ -622,7 +668,7 @@ class GUI:
             dpg.configure_item(txt, show=self.sidebar_expanded)
 
         if dpg.does_alias_exist("group_conn_icon") and dpg.does_alias_exist(
-            "group_conn_full"
+                "group_conn_full"
         ):
             dpg.configure_item("group_conn_icon", show=not self.sidebar_expanded)
             dpg.configure_item("group_conn_full", show=self.sidebar_expanded)
@@ -688,7 +734,7 @@ class GUI:
             if dpg.does_item_exist(tag):
                 dpg.set_value(tag, t[dict_key])
 
-        stat_ids = ["lmb", "rmb", "time", "mouse", "dist", "energy", "unknown", "keys"]
+        stat_ids = ["lmb", "rmb", "time", "mouse", "dist", "energy", "forcestop", "keys"]
         for s_id in stat_ids:
             title_tag = f"stat_title_{s_id}"
             desc_tag = f"stat_desc_{s_id}"
@@ -712,6 +758,7 @@ class GUI:
             ("btn_set0_lmb", "set0"),
             ("btn_set0_rmb", "set0"),
             ("btn_set0_gripper", "set0"),
+            ("btn_update_settings", "txt_update_btn"),
         ]
         for tag, dict_key in button_tags:
             if dpg.does_item_exist(tag):
@@ -760,7 +807,7 @@ class GUI:
             dpg.configure_item("control_plot_y", label=t["axis_dist"])
 
         if dpg.does_item_exist("speed_text_label_control") and dpg.does_item_exist(
-            "slider_speed_control"
+                "slider_speed_control"
         ):
             curr_speed = dpg.get_value("slider_speed_control")
             dpg.set_value("speed_text_label_control", f"{t['speed']}: {curr_speed}%")
@@ -790,11 +837,11 @@ class GUI:
             display_text = "Disconnecting..."
 
         if hasattr(self, "btn_connect_icon") and dpg.does_item_exist(
-            self.btn_connect_icon
+                self.btn_connect_icon
         ):
             dpg.configure_item(self.btn_connect_icon, texture_tag=icon_texture)
         if hasattr(self, "btn_connect_full") and dpg.does_item_exist(
-            self.btn_connect_full
+                self.btn_connect_full
         ):
             dpg.configure_item(self.btn_connect_full, texture_tag=full_texture)
         if hasattr(self, "conn_text") and dpg.does_item_exist(self.conn_text):
@@ -881,12 +928,12 @@ class GUI:
         """Construct the full Dear PyGui interface."""
         dpg.bind_theme(self.global_theme)
         with dpg.window(
-            tag=self.rs(self.width, self.height, tag="window_root"),
-            width=self.width,
-            height=self.height,
-            no_title_bar=True,
-            no_resize=True,
-            no_move=True,
+                tag=self.rs(self.width, self.height, tag="window_root"),
+                width=self.width,
+                height=self.height,
+                no_title_bar=True,
+                no_resize=True,
+                no_move=True,
         ):
             dpg.bind_item_theme("window_root", self.root_theme)
 
@@ -981,7 +1028,7 @@ class GUI:
                             dpg.add_spacer(width=60, tag=self.rs(w=60))
 
                             with dpg.child_window(
-                                width=470, height=220, tag=self.rs(470, 220)
+                                    width=470, height=220, tag=self.rs(470, 220)
                             ):
                                 dpg.add_spacer(height=10, tag=self.rs(h=10))
                                 with dpg.group(horizontal=True):
@@ -1303,13 +1350,13 @@ class GUI:
 
                                 # SPEED SLIDER RESTORED
                                 with dpg.table(
-                                    header_row=False,
-                                    width=470,
-                                    borders_innerH=False,
-                                    borders_outerH=False,
-                                    borders_innerV=False,
-                                    borders_outerV=False,
-                                    tag=self.rs(w=470),
+                                        header_row=False,
+                                        width=470,
+                                        borders_innerH=False,
+                                        borders_outerH=False,
+                                        borders_innerV=False,
+                                        borders_outerV=False,
+                                        tag=self.rs(w=470),
                                 ):
                                     dpg.add_table_column(
                                         width_fixed=True,
@@ -1686,39 +1733,120 @@ class GUI:
                             )
                             dpg.bind_item_theme(txt_port, self.white_text_theme)
 
-                            combo_port = dpg.add_combo(
+                            '''combo_port = dpg.add_combo(
                                 items=[],
                                 width=150,
                                 pos=[350, 13],
                                 callback=self.on_port_change,
                                 tag=self.rs(w=150, pos=[350, 13], tag="combo_port"),
+                            )'''
+                            combo_port = dpg.add_combo(
+                                items=[],
+                                width=180,
+                                pos=[400, 13],
+                                callback=self.on_port_change,
+                                tag=self.rs(w=180, pos=[400, 13], tag="combo_port"),
                             )
                             dpg.bind_item_theme(combo_port, self.gold_combo_theme)
-
-                            btn_refresh = dpg.add_button(
-                                label="Refresh",
-                                width=75,
-                                pos=[505, 13],
-                                callback=self.refresh_ports,
-                                tag=self.rs(
-                                    w=75, pos=[505, 13], tag="btn_refresh_ports"
-                                ),
-                            )
-                            dpg.bind_item_theme(btn_refresh, self.gray_btn_theme)
 
                         dpg.bind_item_theme(row_port, self.settings_row_theme)
                         dpg.add_spacer(height=10, tag=self.rs(h=10))
 
-                        for i in range(5):
-                            with dpg.child_window(
-                                    width=600,
-                                    height=50,
-                                    no_scrollbar=True,
-                                    tag=self.rs(600, 50),
-                            ) as row_empty:
-                                pass
-                            dpg.bind_item_theme(row_empty, self.settings_row_theme)
-                            dpg.add_spacer(height=10, tag=self.rs(h=10))
+                        with dpg.child_window(
+                                width=600,
+                                height=50,
+                                no_scrollbar=True,
+                                tag=self.rs(600, 50, tag="row_pid"),
+                        ) as row_pid:
+                            # Kp
+                            dpg.add_text("Kp:", tag=self.rs(pos=[20, 13]), pos=[20, 13])
+                            dpg.bind_item_theme(dpg.last_item(), self.white_text_theme)
+                            self.input_kp = dpg.add_input_text(
+                                default_value=str(self.config.get("kp", 135.0)),
+                                width=90, tag=self.rs(w=90, pos=[60, 13]), pos=[60, 13]
+                            )
+                            dpg.bind_item_theme(self.input_kp, self.gold_input_theme)
+
+                            # Ki
+                            dpg.add_text("Ki:", tag=self.rs(pos=[190, 13]), pos=[190, 13])
+                            dpg.bind_item_theme(dpg.last_item(), self.white_text_theme)
+                            self.input_ki = dpg.add_input_text(
+                                default_value=str(self.config.get("ki", 10.0)),
+                                width=90, tag=self.rs(w=90, pos=[225, 13]), pos=[225, 13]
+                            )
+                            dpg.bind_item_theme(self.input_ki, self.gold_input_theme)
+
+                            # Kd
+                            dpg.add_text("Kd:", tag=self.rs(pos=[360, 13]), pos=[360, 13])
+                            dpg.bind_item_theme(dpg.last_item(), self.white_text_theme)
+                            self.input_kd = dpg.add_input_text(
+                                default_value=str(self.config.get("kd", 5.0)),
+                                width=90, tag=self.rs(w=90, pos=[400, 13]), pos=[400, 13]
+                            )
+                            dpg.bind_item_theme(self.input_kd, self.gold_input_theme)
+
+                        dpg.bind_item_theme(row_pid, self.settings_row_theme)
+                        dpg.add_spacer(height=10, tag=self.rs(h=10))
+
+                        with dpg.child_window(
+                                width=600,
+                                height=50,
+                                no_scrollbar=True,
+                                tag=self.rs(600, 50, tag="row_tracking_tune"),
+                        ) as row_tracking_tune:
+                            # Output deadband
+                            dpg.add_text("Deadband:", tag=self.rs(pos=[20, 13]), pos=[20, 13])
+                            dpg.bind_item_theme(dpg.last_item(), self.white_text_theme)
+                            self.input_output_deadband = dpg.add_input_text(
+                                default_value=str(self.config.get("output_deadband", 0.9)),
+                                width=70, tag=self.rs(w=70, pos=[110, 13]), pos=[110, 13]
+                            )
+                            dpg.bind_item_theme(self.input_output_deadband, self.gold_input_theme)
+
+                            # Minimum tracking speed
+                            dpg.add_text("Min speed:", tag=self.rs(pos=[205, 13]), pos=[205, 13])
+                            dpg.bind_item_theme(dpg.last_item(), self.white_text_theme)
+                            self.input_min_tracking_speed = dpg.add_input_text(
+                                default_value=str(self.config.get("min_tracking_speed", 3)),
+                                width=70, tag=self.rs(w=70, pos=[300, 13]), pos=[300, 13]
+                            )
+                            dpg.bind_item_theme(self.input_min_tracking_speed, self.gold_input_theme)
+
+                            # Acceleration limit
+                            dpg.add_text("Accel:", tag=self.rs(pos=[400, 13]), pos=[400, 13])
+                            dpg.bind_item_theme(dpg.last_item(), self.white_text_theme)
+                            self.input_vision_accel_limit = dpg.add_input_text(
+                                default_value=str(self.config.get("vision_accel_limit", 10)),
+                                width=70, tag=self.rs(w=70, pos=[465, 13]), pos=[465, 13]
+                            )
+                            dpg.bind_item_theme(self.input_vision_accel_limit, self.gold_input_theme)
+
+                        dpg.bind_item_theme(row_tracking_tune, self.settings_row_theme)
+
+                        # Spacer keeps the update button near the lower part of the settings panel
+                        dpg.add_spacer(height=190, tag=self.rs(h=190))
+
+                        # Status Message logic
+                        with dpg.group(horizontal=True):
+                            dpg.add_spacer(width=200, tag=self.rs(w=200))
+                            self.txt_settings_status = dpg.add_text(
+                                "",
+                                color=[80, 255, 80],
+                                show=False,
+                                tag=self.rs(tag="txt_settings_status")
+                            )
+
+                        dpg.add_spacer(height=10, tag=self.rs(h=10))
+
+                        # Update Button
+                        btn_update = dpg.add_button(
+                            label="Update Settings",
+                            width=600,
+                            height=50,
+                            callback=self.on_update_settings,
+                            tag=self.rs(600, 50, tag="btn_update_settings")
+                        )
+                        dpg.bind_item_theme(btn_update, self.gold_btn_theme)
 
             with dpg.group(tag="page_stat", show=False):
                 dpg.add_spacer(height=35, tag=self.rs(h=35))
@@ -1730,7 +1858,7 @@ class GUI:
                     ("mouse", "tex_stat_mouse"),
                     ("dist", "tex_stat_dist"),
                     ("energy", "tex_stat_energy"),
-                    ("unknown", ""),
+                    ("forcestop", "tex_stat_stop"),
                     ("keys", "tex_stat_keys"),
                 ]
 
@@ -1743,7 +1871,7 @@ class GUI:
                                     idx = row * 4 + col
                                     c_id, c_tex = card_data[idx]
                                     with dpg.child_window(
-                                        width=255, height=295, tag=self.rs(255, 295)
+                                            width=255, height=295, tag=self.rs(255, 295)
                                     ) as card_win:
                                         dpg.add_spacer(height=5, tag=self.rs(h=5))
                                         if c_tex:
@@ -1803,14 +1931,14 @@ class GUI:
                             if row == 0:
                                 dpg.add_spacer(height=20, tag=self.rs(h=20))
         with dpg.window(
-            tag=self.rs(self.width, self.height, tag="window_dim"),
-            width=self.width,
-            height=self.height,
-            pos=(0, 0),
-            no_title_bar=True,
-            no_resize=True,
-            no_move=True,
-            show=False,
+                tag=self.rs(self.width, self.height, tag="window_dim"),
+                width=self.width,
+                height=self.height,
+                pos=(0, 0),
+                no_title_bar=True,
+                no_resize=True,
+                no_move=True,
+                show=False,
         ):
             dpg.bind_item_theme("window_dim", self.dim_theme)
             dpg.add_button(
@@ -1822,21 +1950,21 @@ class GUI:
             dpg.bind_item_theme(dpg.last_item(), self.invisible_btn_theme)
 
         with dpg.window(
-            tag=self.rs(60, self.height, tag="window_sidebar"),
-            width=60,
-            height=self.height,
-            pos=(0, 0),
-            no_title_bar=True,
-            no_resize=True,
-            no_move=True,
+                tag=self.rs(60, self.height, tag="window_sidebar"),
+                width=60,
+                height=self.height,
+                pos=(0, 0),
+                no_title_bar=True,
+                no_resize=True,
+                no_move=True,
         ):
             dpg.bind_item_theme("window_sidebar", self.sidebar_theme)
             with dpg.child_window(
-                tag=self.rs(60, self.height, tag="sidebar_child"),
-                width=60,
-                height=self.height,
-                border=False,
-                no_scrollbar=True,
+                    tag=self.rs(60, self.height, tag="sidebar_child"),
+                    width=60,
+                    height=self.height,
+                    border=False,
+                    no_scrollbar=True,
             ):
                 self.nav_texts = []
                 with dpg.group(horizontal=True):
@@ -2088,6 +2216,35 @@ class GUI:
         if self.mouse_blocker_pipe:
             self.mouse_blocker_pipe.send({"cmd": "START"})
 
+    def _increment_stat(self, key, amount=1):
+        """Helper function to immediately save and refresh a statistic."""
+        self.stats_manager.increment(key, amount)
+
+        tag = f"stat_val_{key}"
+        if dpg.does_item_exist(tag):
+            val = self.stats_manager.get(key)
+            dpg.configure_item(tag, label=StatsManager.format_value(key, val))
+
+    def _commit_time_and_energy(self):
+        """Calculates and saves time & energy ONLY upon disconnect or app exit."""
+        if hasattr(self, 'connection_start_time') and self.connection_start_time is not None:
+            elapsed = time.time() - self.connection_start_time
+            if elapsed > 0:
+                self.stats_manager.increment("time", int(elapsed))
+                energy_wh = (elapsed / 3600.0) * 150.0
+                self.stats_manager.increment("energy", energy_wh)
+
+                for key in ["time", "energy"]:
+                    tag = f"stat_val_{key}"
+                    if dpg.does_item_exist(tag):
+                        value = self.stats_manager.get(key)
+                        dpg.configure_item(tag, label=StatsManager.format_value(key, value))
+
+                if hasattr(self.stats_manager, 'save'):
+                    self.stats_manager.save()
+
+            self.connection_start_time = time.time()
+
     def on_stop(self, sender=None, app_data=None):
         """Stop the vision worker, deactivate mouse blocker, and emergency-stop the controller."""
         self.pipe.send({"cmd": "STOP"})
@@ -2098,13 +2255,28 @@ class GUI:
                 {"cmd": "SEND", "value": f"0,0,0,p,{self.current_speed},0,7,7"}
             )
             self.add_log("<System> EMERGENCY STOP ACTIVATED", color=[255, 0, 0])
+        self._increment_stat("forcestop", 1)
+
+        # Stop calibration if running
+        if hasattr(self, 'cali_routine') and self.cali_routine is not None:
+            self.cali_routine.is_cancelled = True
+
+        self._increment_stat("unknown", 1)
 
     def run_calibration(self):
         """Run the calibration process in a separate thread to avoid blocking the UI."""
         if self.is_connected:
             self.add_log("<Calibration> Initializing calibration routine...", color=[255, 255, 80])
-            cali_routine = CalibrationRoutine(self)
-            cali_routine.run()
+            self.cali_routine = CalibrationRoutine(self)
+            self.cali_routine.run()
+
+            if not getattr(self.cali_routine, 'is_cancelled', False):
+                self._increment_stat("mouse", 1)
+                self.add_log("<Calibration> Calibration completed successfully.", color=[80, 255, 80])
+            else:
+                self.add_log("<Calibration> Calibration aborted by user.", color=[255, 80, 80])
+
+            self.cali_routine = None
         else:
             self.add_log("<Calibration> Please connect to the ESP32 first.", color=[255, 80, 80])
             print("Please connect to the ESP32 and run calibration again.")
@@ -2113,7 +2285,7 @@ class GUI:
         """Start calibration in the vision worker."""
         print("Starting calibration...")
         threading.Thread(target=self.run_calibration, daemon=True).start()
-    
+
     def on_start_sim(self, sender=None, app_data=None):
         """Request simulation start."""
         self.simulation_state = "starting"
@@ -2208,7 +2380,7 @@ class GUI:
                     dpg.set_value("series_vision_dist", [self.plot_vision_time_data, self.plot_vision_dist_data])
                     dpg.fit_axis_data("control_plot_x")
                     dpg.fit_axis_data("control_plot_y")
-                    
+
             while self.comms_pipe.poll():
                 msg = self.comms_pipe.recv()
 
@@ -2219,7 +2391,20 @@ class GUI:
                     # Track connection time for statistics
                     if self.is_connected:
                         self.connection_start_time = time.time()
+                        self.comms_pipe.send({
+                            "cmd": "SEND",
+                            "value": f"PID,{self.config.get('kp', 75.0)},{self.config.get('ki', 6.0)},{self.config.get('kd', 15.0)}"
+                        })
+                        self.comms_pipe.send({
+                            "cmd": "SEND",
+                            "value": (
+                                f"TUNE,{self.config.get('output_deadband', 0.9)},"
+                                f"{self.config.get('min_tracking_speed', 3)},"
+                                f"{self.config.get('vision_accel_limit', 10)}"
+                            )
+                        })
                     else:
+                        self._commit_time_and_energy()
                         self.connection_start_time = None
 
                     self.update_connection_display()
@@ -2231,6 +2416,9 @@ class GUI:
                     display_text = f"[ {keys.upper()} ]" if keys else "[ BRAK ]"
                     if dpg.does_item_exist("current_keys_text"):
                         dpg.set_value("current_keys_text", display_text)
+
+                    if "p" in keys and "p" not in self.last_pressed_keys:
+                        self.on_stop()
 
                     if "/" in keys and "/" not in self.last_pressed_keys:
                         self.telemetry_enabled = not self.telemetry_enabled
@@ -2247,30 +2435,50 @@ class GUI:
                                 self.add_log(f"<Telemetry> Saved: {os.path.basename(saved_file)}", color=[80, 255, 80])
                     self.last_pressed_keys = keys
 
+
                 elif msg.get("type") == "esp_msg":
+
                     esp_text = msg.get("value")
-                    print(f"<ESP32> {esp_text}", flush=True)
 
+                    if not esp_text.startswith("STATS,"):
+                        print(f"<ESP32> {esp_text}", flush=True)
                     try:
-                        if "X:" in esp_text and "Y:" in esp_text:
-                            parts = esp_text.split("|")
+                        if esp_text.startswith("STATS,"):
+                            parts = esp_text.split(",")
+                            if len(parts) >= 4:
+                                current_lmb = int(parts[1])
+                                current_rmb = int(parts[2])
+                                current_dist = float(parts[3]) / 100.0
+                                diff_lmb = current_lmb - self.esp_last_lmb
+                                diff_rmb = current_rmb - self.esp_last_rmb
+                                diff_dist = current_dist - self.esp_last_dist
 
+                                if diff_lmb < 0: diff_lmb = current_lmb
+                                if diff_rmb < 0: diff_rmb = current_rmb
+                                if diff_dist < 0: diff_dist = current_dist
+
+                                self.esp_last_lmb = current_lmb
+                                self.esp_last_rmb = current_rmb
+                                self.esp_last_dist = current_dist
+
+                                if diff_lmb > 0: self._increment_stat("lmb", diff_lmb)
+                                if diff_rmb > 0: self._increment_stat("rmb", diff_rmb)
+                                if diff_dist > 0: self._increment_stat("dist", diff_dist)
+
+                        elif "X:" in esp_text and "Y:" in esp_text:
+                            parts = esp_text.split("|")
                             for part in parts:
                                 part = part.strip()
-
                                 if part.startswith("X:"):
                                     self.pos_x = float(part.split(":")[1].strip())
-
                                 elif part.startswith("Y:"):
                                     self.pos_y = float(part.split(":")[1].strip())
-
                                 elif part.startswith("Z:"):
                                     self.pos_z = float(part.split(":")[1].strip())
-
                             self._update_coords_display()
+
                             if self.is_recording_trajectory:
                                 self.trajectory_logger.add_point(time.time(), self.pos_x, self.pos_y)
-
                             curr_time = time.time() - self.start_time
                             self.plot_time_data.append(curr_time)
                             self.plot_x_data.append(self.pos_x)
@@ -2292,8 +2500,38 @@ class GUI:
 
                     except (ValueError, IndexError, AttributeError):
                         pass
+                elif msg.get("type") == "esp_stats":
+                    current_lmb = msg.get("lmb", 0)
+                    current_rmb = msg.get("rmb", 0)
+                    current_dist = msg.get("dist", 0.0)
 
+                    diff_lmb = current_lmb - self.esp_last_lmb
+                    diff_rmb = current_rmb - self.esp_last_rmb
+                    diff_dist = current_dist - self.esp_last_dist
 
+                    if diff_lmb < 0: diff_lmb = current_lmb
+                    if diff_rmb < 0: diff_rmb = current_rmb
+                    if diff_dist < 0: diff_dist = current_dist
+
+                    self.esp_last_lmb = current_lmb
+                    self.esp_last_rmb = current_rmb
+                    self.esp_last_dist = current_dist
+
+                    updates = {}
+                    if diff_lmb > 0: updates["lmb"] = diff_lmb
+                    if diff_rmb > 0: updates["rmb"] = diff_rmb
+                    if diff_dist > 0: updates["dist"] = diff_dist
+
+                    if updates:
+                        for key, val in updates.items():
+                            self.stats_manager.increment(key, val)
+                            tag = f"stat_val_{key}"
+                            if dpg.does_item_exist(tag):
+                                current_val = self.stats_manager.get(key)
+                                dpg.configure_item(
+                                    tag,
+                                    label=StatsManager.format_value(key, current_val)
+                                )
                 elif msg.get("type") == "stat_update":
                     data = msg.get("data", {})
                     for key, value in data.items():
@@ -2359,7 +2597,7 @@ class GUI:
                     f"{self.current_speed},{target_detected},{deadzone_x},{deadzone_y}"
                 )
 
-                if command != last_sent_command or (now - last_send_time) >= 0.02:
+                if command != last_sent_command:  # or (now - last_send_time) >= 0.015
                     self.comms_pipe.send(
                         {
                             "cmd": "SEND",
@@ -2421,6 +2659,57 @@ class GUI:
                 self._last_stats_refresh = now
                 self.refresh_stats_display()
 
+    def on_update_settings(self, sender, app_data):
+        """Save PID and tracking-tuning settings to JSON and send to ESP32."""
+        t = self.lang_dict[self.current_lang]
+        try:
+            # Parse inputs cleanly (replacing commas to prevent float errors based on local keyboard layouts)
+            kp = float(dpg.get_value(self.input_kp).replace(",", "."))
+            ki = float(dpg.get_value(self.input_ki).replace(",", "."))
+            kd = float(dpg.get_value(self.input_kd).replace(",", "."))
+
+            output_deadband = float(dpg.get_value(self.input_output_deadband).replace(",", "."))
+            min_tracking_speed = int(float(dpg.get_value(self.input_min_tracking_speed).replace(",", ".")))
+            vision_accel_limit = int(float(dpg.get_value(self.input_vision_accel_limit).replace(",", ".")))
+
+            # GUI-side clamps matching the ESP32 clamps
+            output_deadband = max(0.0, min(10.0, output_deadband))
+            min_tracking_speed = max(0, min(100, min_tracking_speed))
+            vision_accel_limit = max(1, min(100, vision_accel_limit))
+
+            # Store to dict and save JSON
+            self.config["kp"] = kp
+            self.config["ki"] = ki
+            self.config["kd"] = kd
+            self.config["output_deadband"] = output_deadband
+            self.config["min_tracking_speed"] = min_tracking_speed
+            self.config["vision_accel_limit"] = vision_accel_limit
+            self.save_config()
+
+            # Broadcast to ESP32
+            if self.is_connected:
+                self.comms_pipe.send({"cmd": "SEND", "value": f"PID,{kp},{ki},{kd}"})
+                self.comms_pipe.send({
+                    "cmd": "SEND",
+                    "value": f"TUNE,{output_deadband},{min_tracking_speed},{vision_accel_limit}"
+                })
+
+            # Show success message
+            dpg.set_value(self.txt_settings_status, t["txt_update_ok"])
+            dpg.configure_item(self.txt_settings_status, color=[80, 255, 80], show=True)
+
+        except ValueError:
+            # Show error message
+            dpg.set_value(self.txt_settings_status, t["txt_update_err"])
+            dpg.configure_item(self.txt_settings_status, color=[255, 80, 80], show=True)
+
+        # Hide the status message smoothly after 3 seconds
+        def hide_status():
+            if dpg.does_item_exist(self.txt_settings_status):
+                dpg.configure_item(self.txt_settings_status, show=False)
+
+        threading.Timer(3.0, hide_status).start()
+
     def run(self):
         """Show the viewport and enter the main UI loop."""
         dpg.set_primary_window("window_root", True)
@@ -2432,53 +2721,53 @@ class GUI:
 
             # X-Axis Jogging (LMB row)
             if dpg.does_item_exist("btn_left_lmb") and dpg.is_item_active(
-                "btn_left_lmb"
+                    "btn_left_lmb"
             ):
                 current_key = "j"
             elif dpg.does_item_exist("btn_right_lmb") and dpg.is_item_active(
-                "btn_right_lmb"
+                    "btn_right_lmb"
             ):
                 current_key = "l"
 
             # Y-Axis Jogging (RMB row)
             elif dpg.does_item_exist("btn_left_rmb") and dpg.is_item_active(
-                "btn_left_rmb"
+                    "btn_left_rmb"
             ):
                 current_key = "k"
             elif dpg.does_item_exist("btn_right_rmb") and dpg.is_item_active(
-                "btn_right_rmb"
+                    "btn_right_rmb"
             ):
                 current_key = "i"
 
             # Z-Axis Jogging (Gripper row)
             elif dpg.does_item_exist("btn_left_gripper") and dpg.is_item_active(
-                "btn_left_gripper"
+                    "btn_left_gripper"
             ):
                 current_key = "u"
             elif dpg.does_item_exist("btn_right_gripper") and dpg.is_item_active(
-                "btn_right_gripper"
+                    "btn_right_gripper"
             ):
                 current_key = "o"
 
             # Main action buttons (Relays & Servo)
             elif dpg.does_item_exist("btn_lpm_control") and dpg.is_item_active(
-                "btn_lpm_control"
+                    "btn_lpm_control"
             ):
                 current_key = "1"
             elif dpg.does_item_exist("btn_ppm_control") and dpg.is_item_active(
-                "btn_ppm_control"
+                    "btn_ppm_control"
             ):
                 current_key = "2"
             elif dpg.does_item_exist("btn_gripper_control") and dpg.is_item_active(
-                "btn_gripper_control"
+                    "btn_gripper_control"
             ):
                 current_key = "v"
             elif dpg.does_item_exist("btn_homing_control") and dpg.is_item_active(
-                "btn_homing_control"
+                    "btn_homing_control"
             ):
                 current_key = "h"
             elif dpg.does_item_exist("btn_centering_control") and dpg.is_item_active(
-                "btn_centering_control"
+                    "btn_centering_control"
             ):
                 current_key = "c"
 
@@ -2486,7 +2775,7 @@ class GUI:
                 if current_key != last_sent_key or current_key in ("i", "j", "k", "l"):
                     command = f"0,0,0,{current_key},{self.current_speed},0,7,7"
                     print(f"<GUI_SEND> {command}", flush=True)
-                    
+
                     if self.is_connected:
                         self.comms_pipe.send(
                             {
@@ -2494,55 +2783,30 @@ class GUI:
                                 "value": command,
                             }
                         )
-                    
+
                     last_sent_key = current_key
             else:
                 last_sent_key = ""
-                
+
             for page_tag, elements in self.nav_elements.items():
                 config = self.nav_config.get(page_tag)
                 if dpg.does_item_exist(elements["btn"]) and dpg.does_item_exist(
-                    elements["text"]
+                        elements["text"]
                 ):
                     if page_tag == self.active_page_tag:
                         dpg.configure_item(
-                            elements["btn"], texture_tag=config["active_tex"] #type: ignore
+                            elements["btn"], texture_tag=config["active_tex"]  # type: ignore
                         )
                     else:
                         dpg.configure_item(
-                            elements["btn"], texture_tag=config["inactive_tex"] #type: ignore
+                            elements["btn"], texture_tag=config["inactive_tex"]  # type: ignore
                         )
-
-            # Update time and energy statistics if connected
-            if self.is_connected and self.connection_start_time is not None:
-                elapsed = time.time() - self.connection_start_time
-
-                # Accumulate time instead of replacing
-                previous_time = self.stats_manager.get("time")
-                self.stats_manager.set("time", previous_time + int(elapsed))
-
-                # Accumulate energy consumption (150W)
-                energy_wh = (elapsed / 3600.0) * 150.0
-                previous_energy = self.stats_manager.get("energy")
-                self.stats_manager.set("energy", previous_energy + energy_wh)
-
-                # Reset the connection timer to avoid double counting
-                self.connection_start_time = time.time()
-
-                # Update GUI displays every second
-                current_time = time.time()
-                if current_time - self._last_stats_refresh >= 1.0:
-                    self._last_stats_refresh = current_time
-                    for key in ["time", "energy"]:
-                        tag = f"stat_val_{key}"
-                        if dpg.does_item_exist(tag):
-                            value = self.stats_manager.get(key)
-                            dpg.configure_item(
-                                tag,
-                                label=StatsManager.format_value(key, value)
-                            )
-
             dpg.render_dearpygui_frame()
+
+        if hasattr(self, 'is_connected') and self.is_connected:
+            self._commit_time_and_energy()
+        elif hasattr(self.stats_manager, 'save'):
+            self.stats_manager.save()
 
         self.running = False
         self.pipe.send({"cmd": "QUIT"})

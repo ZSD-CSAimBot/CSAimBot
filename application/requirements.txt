@@ -23,5 +23,5 @@ pynput==1.8.1
 bettercam==1.0.0; sys_platform == 'win32'
 cupy-cuda12x==13.6.0; sys_platform == 'win32'
 
-mss==10.1.0; sys_platform == 'linux' 
+mss==10.1.0; sys_platform == 'linux'
 evdev==1.9.3; sys_platform == 'linux'

@@ -73,7 +73,7 @@ class StatsManager:
             value: Value to store.
         """
         self.stats[key] = value
-        self.save()
+        #self.save()
 
     def increment(self, key, amount=1):
         """Increase a statistic value and persist the change.
@@ -83,7 +83,7 @@ class StatsManager:
             amount: Amount to add to the stored value.
         """
         self.stats[key] = self.stats.get(key, 0) + amount
-        self.save()
+        #self.save()
 
     def get_all(self):
         """Return a copy of all stored statistics.
