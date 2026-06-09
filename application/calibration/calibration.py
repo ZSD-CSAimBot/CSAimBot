@@ -283,7 +283,7 @@ class CalibrationRoutine:
 
         # Save parameters
         self.gui.calibration_angle_x = theta_x_rad
-        self.gui.calibration_angle_y = theta_y_rad
+        self.gui.calibration_angle_y = theta_x_rad
         self.gui.calibration_dpi = rounded_dpi
 
         if self.gui.is_connected:

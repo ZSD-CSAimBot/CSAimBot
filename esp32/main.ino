@@ -1202,8 +1202,8 @@ void applyVisionTrackingControl() {
   filteredOffsetY = filteredOffsetY + VISION_FILTER_ALPHA * ((float)targetOffsetPxY - filteredOffsetY);
 
   // Skew angles are already inverted in Python to counter the coordinate system mismatch
-  float rotatedOffsetX = (filteredOffsetX * cos(skewAngleX)) - (filteredOffsetY * sin(skewAngleY));
-  float rotatedOffsetY = (filteredOffsetX * sin(skewAngleX)) + (filteredOffsetY * cos(skewAngleY));
+  float rotatedOffsetX = (filteredOffsetX * cos(skewAngleY)) - (filteredOffsetY * sin(skewAngleY));
+  float rotatedOffsetY = (filteredOffsetX * sin(skewAngleX)) + (filteredOffsetY * cos(skewAngleX));
 
   // Estimate target motion in screen pixels/s and filter that velocity.
   float rawTargetVelPxX = 0.0;
@@ -1810,8 +1810,8 @@ void loop() {
             if (rawDown) manY = 1.0;
 
             // 2. Rotate vector by the calibrated separate axis skew angles
-            float rotX = (manX * cos(skewAngleX)) - (manY * sin(skewAngleY));
-            float rotY = (manX * sin(skewAngleX)) + (manY * cos(skewAngleY));
+            float rotX = (manX * cos(skewAngleY)) - (manY * sin(skewAngleY));
+            float rotY = (manX * sin(skewAngleX)) + (manY * cos(skewAngleX));
 
             // 3. CoreXY kinematic transformation
             float vM1 = rotX - rotY;
