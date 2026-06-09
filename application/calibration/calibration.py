@@ -157,17 +157,17 @@ class CalibrationRoutine:
 
             # PULSE DRIVE - Slow, hard steps
             if dist > 150:
-                self.send_command(keys, override_speed=65)
-                time.sleep(0.08)
+                self.send_command(keys, override_speed=35)
+                time.sleep(0.02)
                 self.send_command("-", 0)
-                time.sleep(0.1)
+                time.sleep(0.15)
             elif dist > 40:
                 self.send_command(keys, override_speed=35)
-                time.sleep(0.05)
+                time.sleep(0.02)
                 self.send_command("-", 0)
                 time.sleep(0.15)
             else:
-                self.send_command(keys, override_speed=15)
+                self.send_command(keys, override_speed=10)
                 time.sleep(0.02)
                 self.send_command("-", 0)
                 time.sleep(0.2)

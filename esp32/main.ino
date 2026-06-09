@@ -288,6 +288,10 @@ void stopAllMotors() {
   motor1Running = false;
   motor2Running = false;
   motorZRunning = false;
+  jogVM1=0.0;
+  jogVM2=0.0;
+  isManualJogging = false;
+  currentVisionSpeedPercent=0;
 
   isMovingUp = false;
   isMovingDown = false;
@@ -534,6 +538,8 @@ void autoLiftCenterAndRestoreZ(const char* reason) {
   Serial.println();
 
   stopAllMotors();
+  isManualJogging = false;
+
   delay(30);
 
   // ============================================================
@@ -1091,6 +1097,7 @@ void performHoming() {
   currentPosY = 1.0;
 
   stopAllMotors();
+  isManualJogging = false;
 
   Serial.println("Homing OK! Position set to 0,0.");
 
@@ -1315,9 +1322,10 @@ void applyVisionTrackingControl() {
       (!mLeft && outputX > outputDeadband) ||
       (!mRight && outputX < -outputDeadband)) {
 
-      isManualJogging = false;
+
       currentVisionSpeedPercent = 0;
       stopAllMotors();
+      isManualJogging = false;
       return;
   }
 
@@ -1356,9 +1364,9 @@ void applyVisionTrackingControl() {
   }
 
   if (maxSpeedValue <= 0 || targetSpeedPercent <= 0) {
-    isManualJogging = false;
     currentVisionSpeedPercent = 0;
     stopAllMotors();
+    isManualJogging = false;
     return;
   }
 
@@ -1831,12 +1839,12 @@ void loop() {
 
             // If movement hits a virtual wall - stop manual jogging
             if ((!mUp && isMovingUp) || (!mDown && isMovingDown) || (!mLeft && isMovingLeft) || (!mRight && isMovingRight)) {
-                isManualJogging = false;
                 stopAllMotors();
+                isManualJogging = false;
             } else {
                 if (maxSpeedValue <= 0) {
-                    isManualJogging = false;
                     stopAllMotors();
+                    isManualJogging = false;
                 } else {
                     setDelayFromSpeedPercent(maxSpeedValue);
                 }
