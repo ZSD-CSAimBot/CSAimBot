@@ -1,10 +1,10 @@
 [Setup]
 AppName=CsAimBot
-AppVersion=2.0
+AppVersion=3.0
 AppPublisher=CsAimBot Team
 DefaultDirName={pf}\CsAimBot
 DefaultGroupName=CsAimBot
-OutputBaseFilename=CsAimBot-Installer-x64-v2
+OutputBaseFilename=CsAimBot-Installer-x64-v3-noconsole
 Compression=lzma2/ultra64
 SolidCompression=yes
 LZMAAlgorithm=1
@@ -24,6 +24,9 @@ Name: "{commondesktop}\CsAimBot"; Filename: "{app}\CsAimBot.exe"
 [Run]
 Filename: "{app}\CsAimBot.exe"; Parameters: "--export-only"; StatusMsg: "Eksportowanie modelu YOLO do formatu TensorRT (moze to potrwac kilka minut)..."; Flags: waituntilterminated
 Filename: "wsl.exe"; Parameters: "-d Ubuntu -e bash -c ""docker load -i \""$(wslpath '{tmp}\gazebo_sim.tar')\"""""; StatusMsg: "Wczytywanie obrazu Gazebo do Dockera na WSL..."; Flags: waituntilterminated skipifdoesntexist
+
+[UninstallDelete]
+Type: filesandordirs; Name: "{app}"
 
 [Code]
 procedure InitializeWizard;
